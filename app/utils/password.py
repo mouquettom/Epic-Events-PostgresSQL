@@ -4,7 +4,7 @@ from app.utils.exceptions import ValidationError
 
 
 def hash_password(password: str) -> str:
-    """Transforme un mot de passe en hash bcrypt."""
+    """ Transforme un mot de passe en hash bcrypt. """
 
     if not password or len(password) < 8:
         raise ValidationError(
