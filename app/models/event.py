@@ -42,9 +42,9 @@ class Event(Base):
         nullable=False,
     )
 
-    support_id: Mapped[int] = mapped_column(
+    support_id: Mapped[int | None] = mapped_column(
         ForeignKey('employee.id'),
-        nullable=False,
+        nullable=True,
     )
 
     contract = relationship('Contract', back_populates='events')

@@ -1,4 +1,4 @@
-from app.models.employee import Employee
+from app.models.employee import Employee, Role
 from app.services.client_service import ClientService
 from app.session.current_session import CurrentSession
 from app.utils.exceptions import EpicEventsError
@@ -8,39 +8,73 @@ class ClientController:
     """ Gère les interactions console liées aux clients. """
 
     def __init__(
-        self, client_service: ClientService, current_session: CurrentSession
+        self,
+        client_service: ClientService,
+        current_session: CurrentSession,
     ) -> None:
-
         self.client_service = client_service
         self.current_session = current_session
 
     def run(self) -> None:
+        employee = self._get_current_employee()
+
         while self.current_session.is_authenticated:
-            print("\n=== Gestion des clients ===")
-            print("1. Lister les clients")
-            print("2. Consulter un client")
-            print("3. Créer un client")
-            print("4. Modifier un client")
-            print("5. Supprimer un client")
-            print("0. Retour")
+            if employee.role == Role.COMMERCIAL:
+                should_return = self._run_commercial_menu()
+            else:
+                should_return = self._run_read_only_menu()
 
-            choice = input("\nVotre choix : ").strip()
+            if should_return:
+                return
 
-            match choice:
-                case "1":
-                    self.list_clients()
-                case "2":
-                    self.get_client()
-                case "3":
-                    self.create_client()
-                case "4":
-                    self.update_client()
-                case "5":
-                    self.delete_client()
-                case "0":
-                    return
-                case _:
-                    print("Choix invalide.")
+    def _run_commercial_menu(self) -> bool:
+        print("\n=== Gestion de mes clients ===")
+        print("1. Lister mes clients")
+        print("2. Consulter un client")
+        print("3. Créer un client")
+        print("4. Modifier un client")
+        print("5. Supprimer un client")
+        print("0. Retour")
+
+        choice = input("\nVotre choix : ").strip()
+
+        match choice:
+            case "1":
+                self.list_clients()
+            case "2":
+                self.get_client()
+            case "3":
+                self.create_client()
+            case "4":
+                self.update_client()
+            case "5":
+                self.delete_client()
+            case "0":
+                return True
+            case _:
+                print("Choix invalide.")
+
+        return False
+
+    def _run_read_only_menu(self) -> bool:
+        print("\n=== Consultation des clients ===")
+        print("1. Lister les clients")
+        print("2. Consulter un client")
+        print("0. Retour")
+
+        choice = input("\nVotre choix : ").strip()
+
+        match choice:
+            case "1":
+                self.list_clients()
+            case "2":
+                self.get_client()
+            case "0":
+                return True
+            case _:
+                print("Choix invalide.")
+
+        return False
 
     def list_clients(self) -> None:
         employee = self._get_current_employee()
@@ -101,7 +135,8 @@ class ClientController:
             )
 
             print(
-                f"\nClient créé avec succès : " f"{client.full_name} (id={client.id})."
+                f"\nClient créé avec succès : "
+                f"{client.full_name} (id={client.id})."
             )
 
         except EpicEventsError as error:
@@ -114,7 +149,7 @@ class ClientController:
         if client_id is None:
             return
 
-        print("\nLaissez un champ vide pour conserver " "la valeur actuelle.")
+        print("\nLaissez un champ vide pour conserver la valeur actuelle.")
 
         full_name = input("Nouveau nom complet : ").strip()
         email = input("Nouvel email : ").strip()
@@ -143,7 +178,9 @@ class ClientController:
         if client_id is None:
             return
 
-        confirmation = input("Confirmer la suppression ? (o/N) : ").strip().lower()
+        confirmation = input(
+            "Confirmer la suppression ? (o/N) : "
+        ).strip().lower()
 
         if confirmation != "o":
             print("Suppression annulée.")

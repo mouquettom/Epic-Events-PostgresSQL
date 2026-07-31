@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.models.employee import Employee
+from app.models.employee import Employee, Role
 from app.models.event import Event
 from app.services.event_service import EventService
 from app.session.current_session import CurrentSession
@@ -11,48 +11,113 @@ class EventController:
     """ Gère les interactions console liées aux événements. """
 
     def __init__(
-        self, event_service: EventService, current_session: CurrentSession
+        self,
+        event_service: EventService,
+        current_session: CurrentSession,
     ) -> None:
-
         self.event_service = event_service
         self.current_session = current_session
 
     def run(self) -> None:
+        employee = self._get_current_employee()
+
         while self.current_session.is_authenticated:
-            print("\n=== Gestion des événements ===")
-            print("1. Lister les événements")
-            print("2. Consulter un événement")
-            print("3. Créer un événement")
-            print("4. Modifier un événement")
-            print("5. Lister les événements sans support")
-            print("6. Affecter un support")
-            print("7. Retirer le support")
-            print("8. Supprimer un événement")
-            print("0. Retour")
+            match employee.role:
+                case Role.GESTION:
+                    should_return = self._run_management_menu()
 
-            choice = input("\nVotre choix : ").strip()
+                case Role.COMMERCIAL:
+                    should_return = self._run_commercial_menu()
 
-            match choice:
-                case "1":
-                    self.list_events()
-                case "2":
-                    self.get_event()
-                case "3":
-                    self.create_event()
-                case "4":
-                    self.update_event()
-                case "5":
-                    self.list_events_without_support()
-                case "6":
-                    self.assign_support()
-                case "7":
-                    self.remove_support()
-                case "8":
-                    self.delete_event()
-                case "0":
-                    return
+                case Role.SUPPORT:
+                    should_return = self._run_support_menu()
+
                 case _:
-                    print("Choix invalide.")
+                    return
+
+            if should_return:
+                return
+
+    def _run_management_menu(self) -> bool:
+        print("\n=== Gestion des événements ===")
+        print("1. Lister les événements")
+        print("2. Consulter un événement")
+        print("3. Modifier un événement")
+        print("4. Lister les événements sans support")
+        print("5. Affecter un support")
+        print("6. Retirer le support")
+        print("7. Supprimer un événement")
+        print("0. Retour")
+
+        choice = input("\nVotre choix : ").strip()
+
+        match choice:
+            case "1":
+                self.list_events()
+            case "2":
+                self.get_event()
+            case "3":
+                self.update_event()
+            case "4":
+                self.list_events_without_support()
+            case "5":
+                self.assign_support()
+            case "6":
+                self.remove_support()
+            case "7":
+                self.delete_event()
+            case "0":
+                return True
+            case _:
+                print("Choix invalide.")
+
+        return False
+
+    def _run_commercial_menu(self) -> bool:
+        print("\n=== Gestion de mes événements ===")
+        print("1. Lister mes événements")
+        print("2. Consulter un événement")
+        print("3. Créer un événement")
+        print("0. Retour")
+
+        choice = input("\nVotre choix : ").strip()
+
+        match choice:
+            case "1":
+                self.list_events()
+            case "2":
+                self.get_event()
+            case "3":
+                self.create_event()
+            case "0":
+                return True
+            case _:
+                print("Choix invalide.")
+
+        return False
+
+    def _run_support_menu(self) -> bool:
+        print("\n=== Gestion de mes événements ===")
+        print("1. Lister mes événements")
+        print("2. Consulter un événement")
+        print("3. Modifier un événement")
+        print("0. Retour")
+
+        choice = input("\nVotre choix : ").strip()
+
+        match choice:
+            case "1":
+                self.list_events()
+            case "2":
+                self.get_event()
+            case "3":
+                self.update_event()
+            case "0":
+                return True
+            case _:
+                print("Choix invalide.")
+
+        return False
 
     def list_events(self) -> None:
         employee = self._get_current_employee()
@@ -76,6 +141,7 @@ class EventController:
                 current_employee=employee,
                 event_id=event_id,
             )
+
             self._display_event(event)
 
         except EpicEventsError as error:
@@ -87,19 +153,28 @@ class EventController:
         print("\n=== Création d'un événement ===")
 
         contract_id = self._ask_integer("Identifiant du contrat : ")
+
         if contract_id is None:
             return
 
-        start_date = self._ask_datetime("Date de début (JJ/MM/AAAA HH:MM) : ")
+        start_date = self._ask_datetime(
+            "Date de début (JJ/MM/AAAA HH:MM) : "
+        )
+
         if start_date is None:
             return
 
-        end_date = self._ask_datetime("Date de fin (JJ/MM/AAAA HH:MM) : ")
+        end_date = self._ask_datetime(
+            "Date de fin (JJ/MM/AAAA HH:MM) : "
+        )
+
         if end_date is None:
             return
 
         location = input("Lieu : ")
+
         attendees = self._ask_integer("Nombre de participants : ")
+
         if attendees is None:
             return
 
@@ -116,7 +191,7 @@ class EventController:
                 notes=notes,
             )
 
-            print(f"\nÉvénement créé avec succès " f"(id={event.id}).")
+            print(f"\nÉvénement créé avec succès (id={event.id}).")
 
         except EpicEventsError as error:
             self._display_error(error)
@@ -128,17 +203,22 @@ class EventController:
         if event_id is None:
             return
 
-        print("\nLaissez un champ vide pour conserver " "la valeur actuelle.")
+        print("\nLaissez un champ vide pour conserver la valeur actuelle.")
 
         start_date = self._ask_optional_datetime(
             "Nouvelle date de début (JJ/MM/AAAA HH:MM) : "
         )
+
         end_date = self._ask_optional_datetime(
             "Nouvelle date de fin (JJ/MM/AAAA HH:MM) : "
         )
 
         location = input("Nouveau lieu : ").strip()
-        attendees = self._ask_optional_integer("Nouveau nombre de participants : ")
+
+        attendees = self._ask_optional_integer(
+            "Nouveau nombre de participants : "
+        )
+
         notes = input("Nouvelles notes : ").strip()
 
         try:
@@ -161,7 +241,9 @@ class EventController:
         employee = self._get_current_employee()
 
         try:
-            events = self.event_service.list_events_without_support(employee)
+            events = self.event_service.list_events_without_support(
+                employee
+            )
             self._display_event_list(events)
 
         except EpicEventsError as error:
@@ -171,10 +253,14 @@ class EventController:
         employee = self._get_current_employee()
 
         event_id = self._ask_integer("Identifiant de l'événement : ")
+
         if event_id is None:
             return
 
-        support_id = self._ask_integer("Identifiant de l'employé support : ")
+        support_id = self._ask_integer(
+            "Identifiant de l'employé support : "
+        )
+
         if support_id is None:
             return
 
@@ -185,7 +271,10 @@ class EventController:
                 support_id=support_id,
             )
 
-            print(f"\nSupport {event.support_id} affecté " f"à l'événement {event.id}.")
+            print(
+                f"\nSupport {event.support_id} affecté "
+                f"à l'événement {event.id}."
+            )
 
         except EpicEventsError as error:
             self._display_error(error)
@@ -194,6 +283,7 @@ class EventController:
         employee = self._get_current_employee()
 
         event_id = self._ask_integer("Identifiant de l'événement : ")
+
         if event_id is None:
             return
 
@@ -215,7 +305,9 @@ class EventController:
         if event_id is None:
             return
 
-        confirmation = input("Confirmer la suppression ? (o/N) : ").strip().lower()
+        confirmation = input(
+            "Confirmer la suppression ? (o/N) : "
+        ).strip().lower()
 
         if confirmation != "o":
             print("Suppression annulée.")
@@ -277,9 +369,7 @@ class EventController:
             return None
 
     @staticmethod
-    def _ask_optional_datetime(
-        message: str,
-    ) -> datetime | None:
+    def _ask_optional_datetime(message: str) -> datetime | None:
         raw_value = input(message).strip()
 
         if not raw_value:
