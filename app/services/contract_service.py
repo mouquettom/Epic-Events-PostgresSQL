@@ -15,7 +15,7 @@ from app.utils.exceptions import (
 
 
 class ContractService:
-    """ Applique les règles métier relatives aux contrats. """
+    """Applique les règles métier relatives aux contrats."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -23,18 +23,24 @@ class ContractService:
         self.client_repository = ClientRepository(session)
 
     def create_contract(
-            self,
-            current_employee: Employee,
-            client_id: int,
-            total_amount: Decimal | str | int | float,
-            remaining_amount: Decimal | str | int | float,
-            is_signed: bool = False,
+        self,
+        current_employee: Employee,
+        client_id: int,
+        total_amount: Decimal | str | int | float,
+        remaining_amount: Decimal | str | int | float,
+        is_signed: bool = False,
     ) -> Contract:
+        """
+        Crée un contrat pour un client.
 
-        self._require_commercial_role(current_employee)
+        Cette action est exclusivement réservée au service gestion.
+        Le commercial associé au contrat est automatiquement celui
+        qui est déjà responsable du client.
+        """
+
+        self._require_management_role(current_employee)
 
         client = self._get_existing_client(client_id)
-        self._require_client_owner(current_employee, client)
 
         normalized_total = self._normalize_amount(
             total_amount,
@@ -46,8 +52,8 @@ class ContractService:
         )
 
         self._validate_amounts(
-            normalized_total,
-            normalized_remaining,
+            total_amount=normalized_total,
+            remaining_amount=normalized_remaining,
         )
 
         contract = Contract(
@@ -55,12 +61,15 @@ class ContractService:
             remaining_amount=normalized_remaining,
             is_signed=is_signed,
             client_id=client.id,
-            commercial_id=current_employee.id,
+            commercial_id=client.commercial_id,
         )
 
         try:
-            created_contract = self.contract_repository.create(contract)
+            created_contract = self.contract_repository.create(
+                contract
+            )
             self.session.commit()
+
             return created_contract
 
         except Exception:
@@ -68,74 +77,98 @@ class ContractService:
             raise
 
     def get_contract(
-            self,
-            current_employee: Employee,
-            contract_id: int,
+        self,
+        current_employee: Employee,
+        contract_id: int,
     ) -> Contract:
+        """
+        Retourne un contrat.
 
-        contract = self._get_existing_contract(contract_id)
-        self._require_contract_access(current_employee, contract)
+        Tous les collaborateurs peuvent consulter tous les contrats
+        en lecture seule.
+        """
 
-        return contract
+        self._require_valid_role(current_employee)
+
+        return self._get_existing_contract(contract_id)
 
     def list_contracts(
-            self,
-            current_employee: Employee,
+        self,
+        current_employee: Employee,
     ) -> list[Contract]:
+        """
+        Retourne tous les contrats.
 
-        if current_employee.role == Role.COMMERCIAL:
-            return self.contract_repository.get_by_commercial_id(current_employee.id)
+        La lecture est autorisée aux équipes gestion, commerciale
+        et support.
+        """
 
-        if current_employee.role in {Role.GESTION, Role.SUPPORT}:
-            return self.contract_repository.get_all()
+        self._require_valid_role(current_employee)
 
-        raise AuthorizationError("Vous n'êtes pas autorisé à consulter les contrats.")
+        return self.contract_repository.get_all()
 
     def list_unsigned_contracts(
-            self,
-            current_employee: Employee,
+        self,
+        current_employee: Employee,
     ) -> list[Contract]:
+        """
+        Retourne les contrats non signés du commercial connecté.
 
-        self._require_management_role(current_employee)
-        return self.contract_repository.get_unsigned_contracts()
+        Ce filtre est réservé au service commercial.
+        """
+
+        self._require_commercial_role(current_employee)
+
+        contracts = self.contract_repository.get_unsigned_contracts()
+
+        return [
+            contract
+            for contract in contracts
+            if contract.commercial_id == current_employee.id
+        ]
 
     def list_unpaid_contracts(
-            self,
-            current_employee: Employee,
+        self,
+        current_employee: Employee,
     ) -> list[Contract]:
+        """
+        Retourne les contrats non entièrement payés
+        du commercial connecté.
 
-        if current_employee.role not in {
-            Role.GESTION,
-            Role.COMMERCIAL,
-        }:
-            raise AuthorizationError(
-                "Vous n'êtes pas autorisé à consulter " "les contrats non soldés."
-            )
+        Ce filtre est réservé au service commercial.
+        """
+
+        self._require_commercial_role(current_employee)
 
         contracts = self.contract_repository.get_unpaid_contracts()
 
-        if current_employee.role == Role.COMMERCIAL:
-            return [
-                contract
-                for contract in contracts
-                if contract.commercial_id == current_employee.id
-            ]
-
-        return contracts
+        return [
+            contract
+            for contract in contracts
+            if contract.commercial_id == current_employee.id
+        ]
 
     def update_contract(
-            self,
-            current_employee: Employee,
-            contract_id: int,
-            total_amount: Decimal | str | int | float | None = None,
-            remaining_amount: Decimal | str | int | float | None = None,
-            is_signed: bool | None = None,
+        self,
+        current_employee: Employee,
+        contract_id: int,
+        total_amount: Decimal | str | int | float | None = None,
+        remaining_amount: Decimal | str | int | float | None = None,
+        is_signed: bool | None = None,
     ) -> Contract:
+        """
+        Modifie un contrat.
+
+        Le service gestion peut modifier tous les contrats.
+        Un commercial peut uniquement modifier les contrats
+        associés aux clients dont il est responsable.
+        """
 
         contract = self._get_existing_contract(contract_id)
+
         self._require_contract_update_permission(
-            current_employee,
-            contract,
+            employee=current_employee,
+            contract=contract,
         )
 
         new_total = contract.total_amount
@@ -153,7 +186,10 @@ class ContractService:
                 "Le montant restant",
             )
 
-        self._validate_amounts(new_total, new_remaining)
+        self._validate_amounts(
+            total_amount=new_total,
+            remaining_amount=new_remaining,
+        )
 
         contract.total_amount = new_total
         contract.remaining_amount = new_remaining
@@ -162,33 +198,21 @@ class ContractService:
             contract.is_signed = is_signed
 
         try:
-            updated_contract = self.contract_repository.update(contract)
+            updated_contract = self.contract_repository.update(
+                contract
+            )
             self.session.commit()
+
             return updated_contract
 
         except Exception:
             self.session.rollback()
             raise
 
-    def delete_contract(
-            self,
-            current_employee: Employee,
-            contract_id: int,
-    ) -> None:
-
-        self._require_management_role(current_employee)
-
-        contract = self._get_existing_contract(contract_id)
-
-        try:
-            self.contract_repository.delete(contract)
-            self.session.commit()
-
-        except Exception:
-            self.session.rollback()
-            raise
-
-    def _get_existing_contract(self, contract_id: int) -> Contract:
+    def _get_existing_contract(
+        self,
+        contract_id: int,
+    ) -> Contract:
         contract = self.contract_repository.get_by_id(contract_id)
 
         if contract is None:
@@ -196,7 +220,10 @@ class ContractService:
 
         return contract
 
-    def _get_existing_client(self, client_id: int) -> Client:
+    def _get_existing_client(
+        self,
+        client_id: int,
+    ) -> Client:
         client = self.client_repository.get_by_id(client_id)
 
         if client is None:
@@ -205,65 +232,69 @@ class ContractService:
         return client
 
     @staticmethod
-    def _require_commercial_role(employee: Employee) -> None:
-        if employee.role != Role.COMMERCIAL:
-            raise AuthorizationError("Seul un commercial peut créer un contrat.")
-
-    @staticmethod
-    def _require_management_role(employee: Employee) -> None:
-        if employee.role != Role.GESTION:
-            raise AuthorizationError("Cette action est réservée au service gestion.")
-
-    @staticmethod
-    def _require_client_owner(
-            employee: Employee,
-            client: Client,
+    def _require_management_role(
+        employee: Employee,
     ) -> None:
-
-        if client.commercial_id != employee.id:
+        if employee.role != Role.GESTION:
             raise AuthorizationError(
-                "Vous ne pouvez créer un contrat que pour vos propres clients."
+                "Cette action est réservée au service gestion."
             )
 
     @staticmethod
-    def _require_contract_access(
-            employee: Employee,
-            contract: Contract,
+    def _require_commercial_role(
+        employee: Employee,
     ) -> None:
+        if employee.role != Role.COMMERCIAL:
+            raise AuthorizationError(
+                "Cette action est réservée au service commercial."
+            )
 
-        if employee.role == Role.COMMERCIAL:
-            if contract.commercial_id != employee.id:
-                raise AuthorizationError(
-                    "Vous ne pouvez consulter que vos propres contrats."
-                )
-            return
+    @staticmethod
+    def _require_valid_role(
+        employee: Employee,
+    ) -> None:
+        allowed_roles = {
+            Role.GESTION,
+            Role.COMMERCIAL,
+            Role.SUPPORT,
+        }
 
-        if employee.role not in {Role.GESTION, Role.SUPPORT}:
-            raise AuthorizationError("Vous n'êtes pas autorisé à consulter ce contrat.")
+        if employee.role not in allowed_roles:
+            raise AuthorizationError(
+                "Vous n'êtes pas autorisé à consulter les contrats."
+            )
 
     @staticmethod
     def _require_contract_update_permission(
-            employee: Employee,
-            contract: Contract,
+        employee: Employee,
+        contract: Contract,
     ) -> None:
-
         if employee.role == Role.GESTION:
             return
 
-        if employee.role == Role.COMMERCIAL and contract.commercial_id == employee.id:
+        if (
+            employee.role == Role.COMMERCIAL
+            and contract.commercial_id == employee.id
+        ):
             return
 
-        raise AuthorizationError("Vous n'êtes pas autorisé à modifier ce contrat.")
+        raise AuthorizationError(
+            "Vous n'êtes pas autorisé à modifier ce contrat."
+        )
 
     @staticmethod
     def _normalize_amount(
-            value: Decimal | str | int | float,
-            field_name: str,
+        value: Decimal | str | int | float,
+        field_name: str,
     ) -> Decimal:
-
         try:
             amount = Decimal(str(value))
-        except (InvalidOperation, ValueError, TypeError) as error:
+
+        except (
+            InvalidOperation,
+            ValueError,
+            TypeError,
+        ) as error:
             raise ValidationError(
                 f"{field_name} doit être un nombre valide."
             ) from error
@@ -272,17 +303,21 @@ class ContractService:
 
     @staticmethod
     def _validate_amounts(
-            total_amount: Decimal,
-            remaining_amount: Decimal,
+        total_amount: Decimal,
+        remaining_amount: Decimal,
     ) -> None:
-
         if total_amount <= 0:
-            raise ValidationError("Le montant total doit être supérieur à zéro.")
+            raise ValidationError(
+                "Le montant total doit être supérieur à zéro."
+            )
 
         if remaining_amount < 0:
-            raise ValidationError("Le montant restant ne peut pas être négatif.")
+            raise ValidationError(
+                "Le montant restant ne peut pas être négatif."
+            )
 
         if remaining_amount > total_amount:
             raise ValidationError(
-                "Le montant restant ne peut pas dépasser " "le montant total."
+                "Le montant restant ne peut pas dépasser "
+                "le montant total."
             )
