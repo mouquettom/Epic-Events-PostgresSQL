@@ -8,7 +8,7 @@ from app.session.current_session import CurrentSession
 
 
 class MainMenuController:
-    """ Affiche le menu principal selon le rôle de l'employé. """
+    """Affiche le menu principal selon le rôle du collaborateur."""
 
     def __init__(
         self,
@@ -27,6 +27,8 @@ class MainMenuController:
         self.event_controller = event_controller
 
     def run(self) -> None:
+        """Affiche le menu correspondant au rôle connecté."""
+
         while self.current_session.is_authenticated:
             employee = self.current_session.current_employee
 
@@ -46,10 +48,15 @@ class MainMenuController:
                     self._run_support_menu()
 
                 case _:
-                    print("\nRôle inconnu. Déconnexion.")
+                    print(
+                        "\nRôle inconnu. "
+                        "Déconnexion de l'application."
+                    )
                     self.auth_controller.logout()
 
     def _display_header(self) -> None:
+        """Affiche les informations du collaborateur connecté."""
+
         employee = self.current_session.current_employee
 
         if employee is None:
@@ -59,14 +66,23 @@ class MainMenuController:
         print("EPIC EVENTS CRM")
         print("=" * 45)
         print(
-            f"Utilisateur : "
-            f"{employee.first_name} {employee.last_name}"
+            "Collaborateur : "
+            f"{employee.first_name} "
+            f"{employee.last_name}"
         )
         print(f"Rôle : {employee.role.value}")
         print("=" * 45)
 
     def _run_management_menu(self) -> None:
-        print("1. Gérer les employés")
+        """
+        Affiche le menu du service gestion.
+
+        La gestion peut administrer les collaborateurs, consulter
+        toutes les données, créer et modifier les contrats,
+        puis affecter un support aux événements.
+        """
+
+        print("1. Gérer les collaborateurs")
         print("2. Consulter les clients")
         print("3. Gérer les contrats")
         print("4. Gérer les événements")
@@ -94,9 +110,17 @@ class MainMenuController:
                 print("Choix invalide.")
 
     def _run_commercial_menu(self) -> None:
-        print("1. Gérer mes clients")
-        print("2. Gérer mes contrats")
-        print("3. Gérer mes événements")
+        """
+        Affiche le menu du service commercial.
+
+        Le commercial peut consulter toutes les données,
+        gérer ses clients, suivre les contrats de ses clients
+        et créer un événement pour un contrat signé.
+        """
+
+        print("1. Consulter et gérer les clients")
+        print("2. Consulter et suivre les contrats")
+        print("3. Consulter et créer des événements")
         print("0. Se déconnecter")
 
         choice = input("\nVotre choix : ").strip()
@@ -118,13 +142,29 @@ class MainMenuController:
                 print("Choix invalide.")
 
     def _run_support_menu(self) -> None:
-        print("1. Consulter et modifier mes événements")
+        """
+        Affiche le menu du service support.
+
+        Le support peut consulter tous les clients, contrats
+        et événements, puis filtrer et modifier les événements
+        qui lui sont attribués.
+        """
+
+        print("1. Consulter les clients")
+        print("2. Consulter les contrats")
+        print("3. Consulter et suivre les événements")
         print("0. Se déconnecter")
 
         choice = input("\nVotre choix : ").strip()
 
         match choice:
             case "1":
+                self.client_controller.run()
+
+            case "2":
+                self.contract_controller.run()
+
+            case "3":
                 self.event_controller.run()
 
             case "0":

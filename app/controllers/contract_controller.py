@@ -8,7 +8,7 @@ from app.utils.exceptions import EpicEventsError
 
 
 class ContractController:
-    """ Gère les interactions console liées aux contrats. """
+    """Gère les interactions console liées aux contrats."""
 
     def __init__(
         self,
@@ -19,6 +19,8 @@ class ContractController:
         self.current_session = current_session
 
     def run(self) -> None:
+        """Affiche le menu adapté au rôle du collaborateur connecté."""
+
         employee = self._get_current_employee()
 
         while self.current_session.is_authenticated:
@@ -30,7 +32,7 @@ class ContractController:
                     should_return = self._run_commercial_menu()
 
                 case Role.SUPPORT:
-                    should_return = self._run_support_menu()
+                    should_return = self._run_read_only_menu()
 
                 case _:
                     return
@@ -39,13 +41,18 @@ class ContractController:
                 return
 
     def _run_management_menu(self) -> bool:
+        """
+        Affiche le menu du service gestion.
+
+        La gestion peut consulter tous les contrats, en créer
+        et modifier n'importe quel contrat.
+        """
+
         print("\n=== Gestion des contrats ===")
-        print("1. Lister les contrats")
+        print("1. Lister tous les contrats")
         print("2. Consulter un contrat")
-        print("3. Modifier un contrat")
-        print("4. Lister les contrats non signés")
-        print("5. Lister les contrats non soldés")
-        print("6. Supprimer un contrat")
+        print("3. Créer un contrat")
+        print("4. Modifier un contrat")
         print("0. Retour")
 
         choice = input("\nVotre choix : ").strip()
@@ -53,29 +60,37 @@ class ContractController:
         match choice:
             case "1":
                 self.list_contracts()
+
             case "2":
                 self.get_contract()
+
             case "3":
-                self.update_contract()
+                self.create_contract()
+
             case "4":
-                self.list_unsigned_contracts()
-            case "5":
-                self.list_unpaid_contracts()
-            case "6":
-                self.delete_contract()
+                self.update_contract()
+
             case "0":
                 return True
+
             case _:
                 print("Choix invalide.")
 
         return False
 
     def _run_commercial_menu(self) -> bool:
-        print("\n=== Gestion de mes contrats ===")
-        print("1. Lister mes contrats")
+        """
+        Affiche le menu du service commercial.
+
+        Le commercial peut consulter tous les contrats, modifier
+        ceux de ses clients et utiliser les filtres demandés.
+        """
+
+        print("\n=== Consultation et suivi des contrats ===")
+        print("1. Lister tous les contrats")
         print("2. Consulter un contrat")
-        print("3. Créer un contrat")
-        print("4. Modifier un contrat")
+        print("3. Modifier le contrat d'un de mes clients")
+        print("4. Lister mes contrats non signés")
         print("5. Lister mes contrats non soldés")
         print("0. Retour")
 
@@ -84,24 +99,37 @@ class ContractController:
         match choice:
             case "1":
                 self.list_contracts()
+
             case "2":
                 self.get_contract()
+
             case "3":
-                self.create_contract()
-            case "4":
                 self.update_contract()
+
+            case "4":
+                self.list_unsigned_contracts()
+
             case "5":
                 self.list_unpaid_contracts()
+
             case "0":
                 return True
+
             case _:
                 print("Choix invalide.")
 
         return False
 
-    def _run_support_menu(self) -> bool:
+    def _run_read_only_menu(self) -> bool:
+        """
+        Affiche le menu de consultation du support.
+
+        Le support possède un accès en lecture seule à tous
+        les contrats.
+        """
+
         print("\n=== Consultation des contrats ===")
-        print("1. Lister les contrats")
+        print("1. Lister tous les contrats")
         print("2. Consulter un contrat")
         print("0. Retour")
 
@@ -110,28 +138,40 @@ class ContractController:
         match choice:
             case "1":
                 self.list_contracts()
+
             case "2":
                 self.get_contract()
+
             case "0":
                 return True
+
             case _:
                 print("Choix invalide.")
 
         return False
 
     def list_contracts(self) -> None:
+        """Affiche tous les contrats."""
+
         employee = self._get_current_employee()
 
         try:
-            contracts = self.contract_service.list_contracts(employee)
+            contracts = self.contract_service.list_contracts(
+                employee
+            )
+
             self._display_contract_list(contracts)
 
         except EpicEventsError as error:
             self._display_error(error)
 
     def get_contract(self) -> None:
+        """Affiche les informations détaillées d'un contrat."""
+
         employee = self._get_current_employee()
-        contract_id = self._ask_integer("Identifiant du contrat : ")
+        contract_id = self._ask_integer(
+            "Identifiant du contrat : "
+        )
 
         if contract_id is None:
             return
@@ -148,16 +188,27 @@ class ContractController:
             self._display_error(error)
 
     def create_contract(self) -> None:
+        """
+        Demande les informations nécessaires à la création d'un contrat.
+
+        Le service récupère automatiquement le commercial associé
+        au client sélectionné.
+        """
+
         employee = self._get_current_employee()
 
         print("\n=== Création d'un contrat ===")
 
-        client_id = self._ask_integer("Identifiant du client : ")
+        client_id = self._ask_integer(
+            "Identifiant du client : "
+        )
 
         if client_id is None:
             return
 
-        total_amount = self._ask_decimal("Montant total : ")
+        total_amount = self._ask_decimal(
+            "Montant total : "
+        )
 
         if total_amount is None:
             return
@@ -182,19 +233,35 @@ class ContractController:
                 is_signed=is_signed,
             )
 
-            print(f"\nContrat créé avec succès (id={contract.id}).")
+            print(
+                "\nContrat créé avec succès "
+                f"(id={contract.id})."
+            )
 
         except EpicEventsError as error:
             self._display_error(error)
 
     def update_contract(self) -> None:
+        """
+        Modifie un contrat.
+
+        Le service vérifie les autorisations :
+        - gestion : tous les contrats ;
+        - commercial : contrats de ses clients uniquement.
+        """
+
         employee = self._get_current_employee()
-        contract_id = self._ask_integer("Identifiant du contrat : ")
+        contract_id = self._ask_integer(
+            "Identifiant du contrat à modifier : "
+        )
 
         if contract_id is None:
             return
 
-        print("\nLaissez un champ vide pour conserver la valeur actuelle.")
+        print(
+            "\nLaissez un champ vide pour conserver "
+            "la valeur actuelle."
+        )
 
         total_amount = self._ask_optional_decimal(
             "Nouveau montant total : "
@@ -224,93 +291,106 @@ class ContractController:
                 is_signed=is_signed,
             )
 
-            print(f"\nContrat {contract.id} mis à jour avec succès.")
+            print(
+                f"\nContrat {contract.id} "
+                "mis à jour avec succès."
+            )
 
         except EpicEventsError as error:
             self._display_error(error)
 
     def list_unsigned_contracts(self) -> None:
+        """
+        Affiche les contrats non signés associés
+        au commercial connecté.
+        """
+
         employee = self._get_current_employee()
 
         try:
-            contracts = self.contract_service.list_unsigned_contracts(
-                employee
+            contracts = (
+                self.contract_service.list_unsigned_contracts(
+                    employee
+                )
             )
+
             self._display_contract_list(contracts)
 
         except EpicEventsError as error:
             self._display_error(error)
 
     def list_unpaid_contracts(self) -> None:
+        """
+        Affiche les contrats non entièrement payés associés
+        au commercial connecté.
+        """
+
         employee = self._get_current_employee()
 
         try:
-            contracts = self.contract_service.list_unpaid_contracts(
-                employee
+            contracts = (
+                self.contract_service.list_unpaid_contracts(
+                    employee
+                )
             )
+
             self._display_contract_list(contracts)
 
         except EpicEventsError as error:
             self._display_error(error)
 
-    def delete_contract(self) -> None:
-        employee = self._get_current_employee()
-        contract_id = self._ask_integer("Identifiant du contrat : ")
-
-        if contract_id is None:
-            return
-
-        confirmation = input(
-            "Confirmer la suppression ? (o/N) : "
-        ).strip().lower()
-
-        if confirmation != "o":
-            print("Suppression annulée.")
-            return
-
-        try:
-            self.contract_service.delete_contract(
-                current_employee=employee,
-                contract_id=contract_id,
-            )
-
-            print("\nContrat supprimé avec succès.")
-
-        except EpicEventsError as error:
-            self._display_error(error)
-
     def _get_current_employee(self) -> Employee:
+        """Retourne le collaborateur actuellement connecté."""
+
         employee = self.current_session.current_employee
 
         if employee is None:
-            raise RuntimeError("Aucun employé connecté dans la session.")
+            raise RuntimeError(
+                "Aucun collaborateur connecté dans la session."
+            )
 
         return employee
 
     @staticmethod
-    def _ask_integer(message: str) -> int | None:
+    def _ask_integer(
+        message: str,
+    ) -> int | None:
+        """Demande et valide une valeur entière."""
+
         raw_value = input(message).strip()
 
         try:
             return int(raw_value)
 
         except ValueError:
-            print("La valeur doit être un nombre entier.")
+            print(
+                "La valeur doit être un nombre entier."
+            )
             return None
 
     @staticmethod
-    def _ask_decimal(message: str) -> Decimal | None:
+    def _ask_decimal(
+        message: str,
+    ) -> Decimal | None:
+        """Demande et valide un montant obligatoire."""
+
         raw_value = input(message).strip().replace(",", ".")
 
         try:
             return Decimal(raw_value)
 
         except InvalidOperation:
-            print("Le montant doit être un nombre valide.")
+            print(
+                "Le montant doit être un nombre valide."
+            )
             return None
 
     @staticmethod
-    def _ask_optional_decimal(message: str) -> Decimal | None:
+    def _ask_optional_decimal(
+        message: str,
+    ) -> Decimal | None:
+        """Demande et valide un montant facultatif."""
+
         raw_value = input(message).strip().replace(",", ".")
 
         if not raw_value:
@@ -320,29 +400,52 @@ class ContractController:
             return Decimal(raw_value)
 
         except InvalidOperation:
-            print("Le montant doit être un nombre valide.")
+            print(
+                "Le montant doit être un nombre valide."
+            )
             return None
 
     @staticmethod
-    def _ask_boolean(message: str) -> bool:
+    def _ask_boolean(
+        message: str,
+    ) -> bool:
+        """Retourne True lorsque l'utilisateur répond par 'o'."""
+
         return input(message).strip().lower() == "o"
 
     @staticmethod
-    def _display_contract(contract: Contract) -> None:
+    def _display_contract(
+        contract: Contract,
+    ) -> None:
+        """Affiche les informations détaillées d'un contrat."""
+
         print("\n=== Contrat ===")
         print(f"ID : {contract.id}")
         print(f"Client ID : {contract.client_id}")
-        print(f"Commercial ID : {contract.commercial_id}")
-        print(f"Montant total : {contract.total_amount} €")
-        print(f"Montant restant : {contract.remaining_amount} €")
-        print(f"Signé : {'Oui' if contract.is_signed else 'Non'}")
+        print(
+            f"Commercial responsable ID : "
+            f"{contract.commercial_id}"
+        )
+        print(
+            f"Montant total : "
+            f"{contract.total_amount} €"
+        )
+        print(
+            f"Montant restant : "
+            f"{contract.remaining_amount} €"
+        )
+        print(
+            "Signé : "
+            f"{'Oui' if contract.is_signed else 'Non'}"
+        )
         print(f"Créé le : {contract.created_at}")
 
-    @classmethod
+    @staticmethod
     def _display_contract_list(
-        cls,
         contracts: list[Contract],
     ) -> None:
+        """Affiche une liste synthétique de contrats."""
+
         if not contracts:
             print("\nAucun contrat trouvé.")
             return
@@ -351,12 +454,19 @@ class ContractController:
 
         for contract in contracts:
             print(
-                f"{contract.id} — Client {contract.client_id} — "
+                f"{contract.id} — "
+                f"Client {contract.client_id} — "
+                f"Commercial {contract.commercial_id} — "
                 f"Total : {contract.total_amount} € — "
                 f"Restant : {contract.remaining_amount} € — "
-                f"Signé : {'Oui' if contract.is_signed else 'Non'}"
+                f"Signé : "
+                f"{'Oui' if contract.is_signed else 'Non'}"
             )
 
     @staticmethod
-    def _display_error(error: Exception) -> None:
+    def _display_error(
+        error: Exception,
+    ) -> None:
+        """Affiche une erreur métier à l'utilisateur."""
+
         print(f"\nErreur : {error}")
