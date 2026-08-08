@@ -6,16 +6,16 @@ from app.models.contract import Contract
 from app.models.employee import Role
 from app.models.event import Event
 from main import run_application
+from tests.factories import create_client, create_contract
 from tests.functional.helpers import seed_employee
 
 
-def test_commercial_creates_client_contract_and_event(
+def test_commercial_creates_client_and_event_for_signed_contract(
     monkeypatch,
     capsys,
     functional_session_factory: sessionmaker[Session],
 ) -> None:
-
-    seed_employee(
+    commercial = seed_employee(
         functional_session_factory,
         first_name="Alice",
         last_name="Commercial",
@@ -23,6 +23,27 @@ def test_commercial_creates_client_contract_and_event(
         password="CommercialPassword123!",
         role=Role.COMMERCIAL,
     )
+
+    # Le contrat est préparé en base car, selon le brief,
+    # sa création appartient au service gestion et non au commercial.
+    setup_session = functional_session_factory()
+
+    try:
+        existing_client = create_client(
+            setup_session,
+            commercial=commercial,
+            company="Entreprise existante",
+        )
+        signed_contract = create_contract(
+            setup_session,
+            client=existing_client,
+            commercial=commercial,
+            is_signed=True,
+        )
+        contract_id = signed_contract.id
+        setup_session.commit()
+    finally:
+        setup_session.close()
 
     user_inputs = iter(
         [
@@ -36,18 +57,10 @@ def test_commercial_creates_client_contract_and_event(
             "0601020304",
             "Entreprise Test",
             "0",
-            # Menu commercial → contrats
-            "2",
-            "3",
-            "1",
-            "10000",
-            "7500",
-            "o",
-            "0",
             # Menu commercial → événements
             "3",
             "3",
-            "1",
+            str(contract_id),
             "15/12/2027 09:00",
             "15/12/2027 18:00",
             "Paris",
@@ -74,26 +87,27 @@ def test_commercial_creates_client_contract_and_event(
     captured = capsys.readouterr()
 
     assert "Client créé avec succès" in captured.out
-    assert "Contrat créé avec succès" in captured.out
     assert "Événement créé avec succès" in captured.out
 
     verification_session = functional_session_factory()
 
     try:
-        client = verification_session.scalar(
-            select(Client).where(Client.email == "jean.client@functional.test")
+        created_client = verification_session.scalar(
+            select(Client).where(
+                Client.email == "jean.client@functional.test"
+            )
         )
-        contract = verification_session.scalar(select(Contract))
-        event = verification_session.scalar(select(Event))
+        contract = verification_session.get(Contract, contract_id)
+        event = verification_session.scalar(
+            select(Event).where(Event.contract_id == contract_id)
+        )
 
-        assert client is not None
+        assert created_client is not None
         assert contract is not None
-        assert event is not None
-
-        assert contract.client_id == client.id
         assert contract.is_signed is True
+        assert event is not None
         assert event.contract_id == contract.id
         assert event.location == "Paris"
-
+        assert event.support_id is None
     finally:
         verification_session.close()

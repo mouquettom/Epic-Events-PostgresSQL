@@ -63,7 +63,7 @@ def test_management_can_create_employees(
     captured = capsys.readouterr()
 
     assert "Connexion réussie" in captured.out
-    assert "Employé créé avec succès" in captured.out
+    assert "Collaborateur créé avec succès" in captured.out
 
     verification_session = functional_session_factory()
 

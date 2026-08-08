@@ -67,7 +67,7 @@ def test_support_updates_assigned_event(
         [
             "1",
             "support@functional.test",
-            "1",  # menu événements
+            "3",  # menu principal support → événements
             "4",  # modifier
             str(event_id),
             "",  # début inchangé

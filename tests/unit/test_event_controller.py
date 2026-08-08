@@ -10,14 +10,16 @@ from app.session.current_session import CurrentSession
 from app.utils.exceptions import AuthorizationError, NotFoundError
 
 
-def create_current_session() -> tuple[CurrentSession, Employee]:
-    """Crée une session contenant un employé connecté."""
+def create_current_session(
+    role: Role = Role.COMMERCIAL,
+) -> tuple[CurrentSession, Employee]:
+    """Crée une session contenant un collaborateur connecté."""
     employee = Mock(spec=Employee)
     employee.id = 1
     employee.first_name = "Alice"
     employee.last_name = "Martin"
     employee.email = "alice@test.com"
-    employee.role = Role.SUPPORT
+    employee.role = role
 
     current_session = CurrentSession()
     current_session.login(
@@ -28,14 +30,16 @@ def create_current_session() -> tuple[CurrentSession, Employee]:
     return current_session, employee
 
 
-def create_controller() -> tuple[
+def create_controller(
+    role: Role = Role.COMMERCIAL,
+) -> tuple[
     EventController,
     Mock,
     CurrentSession,
     Employee,
 ]:
     """Construit un EventController avec un service simulé."""
-    current_session, employee = create_current_session()
+    current_session, employee = create_current_session(role)
     event_service = Mock()
 
     controller = EventController(
@@ -43,7 +47,12 @@ def create_controller() -> tuple[
         current_session=current_session,
     )
 
-    return controller, event_service, current_session, employee
+    return (
+        controller,
+        event_service,
+        current_session,
+        employee,
+    )
 
 
 def create_event_mock(
@@ -71,6 +80,11 @@ def create_event_mock(
     return event
 
 
+# ---------------------------------------------------------------------------
+# Consultation globale
+# ---------------------------------------------------------------------------
+
+
 def test_list_events_displays_events(capsys) -> None:
     controller, service, _session, employee = create_controller()
     event = create_event_mock()
@@ -78,12 +92,12 @@ def test_list_events_displays_events(capsys) -> None:
 
     controller.list_events()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Liste des événements" in captured.out
-    assert "Contrat 10" in captured.out
-    assert "Paris" in captured.out
-    assert "Support : 4" in captured.out
+    assert "Liste des événements" in output
+    assert "Contrat 10" in output
+    assert "Paris" in output
+    assert "Support : 4" in output
     service.list_events.assert_called_once_with(employee)
 
 
@@ -93,44 +107,71 @@ def test_list_events_displays_empty_message(capsys) -> None:
 
     controller.list_events()
 
-    captured = capsys.readouterr()
-
-    assert "Aucun événement trouvé." in captured.out
+    assert "Aucun événement trouvé." in capsys.readouterr().out
     service.list_events.assert_called_once_with(employee)
 
 
 def test_list_events_displays_service_error(capsys) -> None:
     controller, service, _session, employee = create_controller()
-    service.list_events.side_effect = AuthorizationError("Accès interdit.")
+    service.list_events.side_effect = AuthorizationError(
+        "Accès interdit."
+    )
 
     controller.list_events()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Accès interdit." in captured.out
+    assert "Erreur : Accès interdit." in capsys.readouterr().out
     service.list_events.assert_called_once_with(employee)
 
 
-def test_get_event_displays_event(monkeypatch, capsys) -> None:
+def test_get_event_displays_event(
+    monkeypatch,
+    capsys,
+) -> None:
     controller, service, _session, employee = create_controller()
     event = create_event_mock()
     service.get_event.return_value = event
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "2")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "2",
+    )
 
     controller.get_event()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "=== Événement ===" in captured.out
-    assert "ID : 2" in captured.out
-    assert "Contrat ID : 10" in captured.out
-    assert "Support ID : 4" in captured.out
-    assert "Début : 2026-08-15 18:30:00" in captured.out
-    assert "Fin : 2026-08-15 23:00:00" in captured.out
-    assert "Lieu : Paris" in captured.out
-    assert "Participants : 120" in captured.out
-    assert "Notes : Événement important" in captured.out
+    assert "=== Événement ===" in output
+    assert "ID : 2" in output
+    assert "Contrat ID : 10" in output
+    assert "Support responsable ID : 4" in output
+    assert "Début : 2026-08-15 18:30:00" in output
+    assert "Fin : 2026-08-15 23:00:00" in output
+    assert "Lieu : Paris" in output
+    assert "Participants : 120" in output
+    assert "Notes : Événement important" in output
+
+    service.get_event.assert_called_once_with(
+        current_employee=employee,
+        event_id=2,
+    )
+
+
+def test_get_event_displays_unassigned_support(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, employee = create_controller()
+    event = create_event_mock(support_id=None)
+    service.get_event.return_value = event
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "2",
+    )
+
+    controller.get_event()
+
+    assert "Support responsable ID : Non affecté" in capsys.readouterr().out
     service.get_event.assert_called_once_with(
         current_employee=employee,
         event_id=2,
@@ -143,13 +184,17 @@ def test_get_event_rejects_invalid_identifier(
 ) -> None:
     controller, service, _session, _employee = create_controller()
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
 
     controller.get_event()
 
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
     service.get_event.assert_not_called()
 
 
@@ -158,24 +203,40 @@ def test_get_event_displays_not_found_error(
     capsys,
 ) -> None:
     controller, service, _session, employee = create_controller()
-    service.get_event.side_effect = NotFoundError("Événement introuvable.")
+    service.get_event.side_effect = NotFoundError(
+        "Événement introuvable."
+    )
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "999")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "999",
+    )
 
     controller.get_event()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Événement introuvable." in captured.out
+    assert (
+        "Erreur : Événement introuvable."
+        in capsys.readouterr().out
+    )
     service.get_event.assert_called_once_with(
         current_employee=employee,
         event_id=999,
     )
 
 
-def test_create_event_calls_service(monkeypatch, capsys) -> None:
-    controller, service, _session, employee = create_controller()
-    event = create_event_mock()
+# ---------------------------------------------------------------------------
+# Création - commercial
+# ---------------------------------------------------------------------------
+
+
+def test_create_event_calls_service(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, employee = create_controller(
+        Role.COMMERCIAL
+    )
+    event = create_event_mock(support_id=None)
     service.create_event.return_value = event
 
     input_values = iter(
@@ -195,11 +256,12 @@ def test_create_event_calls_service(monkeypatch, capsys) -> None:
 
     controller.create_event()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Création d'un événement" in captured.out
-    assert "Événement créé avec succès" in captured.out
-    assert "id=2" in captured.out
+    assert "Création d'un événement" in output
+    assert "Événement créé avec succès" in output
+    assert "id=2" in output
+
     service.create_event.assert_called_once_with(
         current_employee=employee,
         contract_id=10,
@@ -216,13 +278,18 @@ def test_create_event_stops_for_invalid_contract_id(
     capsys,
 ) -> None:
     controller, service, _session, _employee = create_controller()
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
 
     controller.create_event()
 
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
     service.create_event.assert_not_called()
 
 
@@ -231,6 +298,7 @@ def test_create_event_stops_for_invalid_start_date(
     capsys,
 ) -> None:
     controller, service, _session, _employee = create_controller()
+
     input_values = iter(["10", "date invalide"])
     monkeypatch.setattr(
         "builtins.input",
@@ -239,9 +307,10 @@ def test_create_event_stops_for_invalid_start_date(
 
     controller.create_event()
 
-    captured = capsys.readouterr()
-
-    assert "Format invalide. Utilisez JJ/MM/AAAA HH:MM." in captured.out
+    assert (
+        "Format invalide. Utilisez JJ/MM/AAAA HH:MM."
+        in capsys.readouterr().out
+    )
     service.create_event.assert_not_called()
 
 
@@ -250,7 +319,14 @@ def test_create_event_stops_for_invalid_end_date(
     capsys,
 ) -> None:
     controller, service, _session, _employee = create_controller()
-    input_values = iter(["10", "15/08/2026 18:30", "date invalide"])
+
+    input_values = iter(
+        [
+            "10",
+            "15/08/2026 18:30",
+            "date invalide",
+        ]
+    )
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
@@ -258,9 +334,10 @@ def test_create_event_stops_for_invalid_end_date(
 
     controller.create_event()
 
-    captured = capsys.readouterr()
-
-    assert "Format invalide. Utilisez JJ/MM/AAAA HH:MM." in captured.out
+    assert (
+        "Format invalide. Utilisez JJ/MM/AAAA HH:MM."
+        in capsys.readouterr().out
+    )
     service.create_event.assert_not_called()
 
 
@@ -269,6 +346,7 @@ def test_create_event_stops_for_invalid_attendees(
     capsys,
 ) -> None:
     controller, service, _session, _employee = create_controller()
+
     input_values = iter(
         [
             "10",
@@ -285,9 +363,10 @@ def test_create_event_stops_for_invalid_attendees(
 
     controller.create_event()
 
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
     service.create_event.assert_not_called()
 
 
@@ -295,8 +374,12 @@ def test_create_event_displays_service_error(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, employee = create_controller()
-    service.create_event.side_effect = AuthorizationError("Création interdite.")
+    controller, service, _session, employee = create_controller(
+        Role.COMMERCIAL
+    )
+    service.create_event.side_effect = AuthorizationError(
+        "Création interdite."
+    )
 
     input_values = iter(
         [
@@ -315,9 +398,7 @@ def test_create_event_displays_service_error(
 
     controller.create_event()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Création interdite." in captured.out
+    assert "Erreur : Création interdite." in capsys.readouterr().out
     service.create_event.assert_called_once_with(
         current_employee=employee,
         contract_id=10,
@@ -329,9 +410,19 @@ def test_create_event_displays_service_error(
     )
 
 
-def test_update_event_calls_service(monkeypatch, capsys) -> None:
-    controller, service, _session, employee = create_controller()
-    event = create_event_mock()
+# ---------------------------------------------------------------------------
+# Modification - support affecté
+# ---------------------------------------------------------------------------
+
+
+def test_update_event_calls_service(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, employee = create_controller(
+        Role.SUPPORT
+    )
+    event = create_event_mock(support_id=employee.id)
     service.update_event.return_value = event
 
     input_values = iter(
@@ -351,9 +442,10 @@ def test_update_event_calls_service(monkeypatch, capsys) -> None:
 
     controller.update_event()
 
-    captured = capsys.readouterr()
-
-    assert "Événement 2 mis à jour avec succès." in captured.out
+    assert (
+        "Événement 2 mis à jour avec succès."
+        in capsys.readouterr().out
+    )
     service.update_event.assert_called_once_with(
         current_employee=employee,
         event_id=2,
@@ -368,11 +460,22 @@ def test_update_event_calls_service(monkeypatch, capsys) -> None:
 def test_update_event_passes_none_for_empty_values(
     monkeypatch,
 ) -> None:
-    controller, service, _session, employee = create_controller()
-    event = create_event_mock()
+    controller, service, _session, employee = create_controller(
+        Role.SUPPORT
+    )
+    event = create_event_mock(support_id=employee.id)
     service.update_event.return_value = event
 
-    input_values = iter(["2", "", "", "", "", ""])
+    input_values = iter(
+        [
+            "2",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ]
+    )
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
@@ -395,14 +498,21 @@ def test_update_event_rejects_invalid_identifier(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, _employee = create_controller()
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
+    controller, service, _session, _employee = create_controller(
+        Role.SUPPORT
+    )
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
 
     controller.update_event()
 
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
     service.update_event.assert_not_called()
 
 
@@ -410,8 +520,12 @@ def test_update_event_displays_service_error(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, employee = create_controller()
-    service.update_event.side_effect = AuthorizationError("Modification interdite.")
+    controller, service, _session, employee = create_controller(
+        Role.SUPPORT
+    )
+    service.update_event.side_effect = AuthorizationError(
+        "Modification interdite."
+    )
 
     input_values = iter(
         [
@@ -430,9 +544,10 @@ def test_update_event_displays_service_error(
 
     controller.update_event()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Modification interdite." in captured.out
+    assert (
+        "Erreur : Modification interdite."
+        in capsys.readouterr().out
+    )
     service.update_event.assert_called_once_with(
         current_employee=employee,
         event_id=2,
@@ -444,53 +559,78 @@ def test_update_event_displays_service_error(
     )
 
 
+# ---------------------------------------------------------------------------
+# Filtres et affectation
+# ---------------------------------------------------------------------------
+
+
 def test_list_events_without_support_displays_events(capsys) -> None:
-    controller, service, _session, employee = create_controller()
+    controller, service, _session, employee = create_controller(
+        Role.GESTION
+    )
     event = create_event_mock(support_id=None)
     service.list_events_without_support.return_value = [event]
 
     controller.list_events_without_support()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Liste des événements" in captured.out
-    assert "Support : Non affecté" in captured.out
+    assert "Liste des événements" in output
+    assert "Support : Non affecté" in output
     service.list_events_without_support.assert_called_once_with(employee)
 
 
-def test_list_events_without_support_displays_empty_message(
-    capsys,
-) -> None:
-    controller, service, _session, employee = create_controller()
+def test_list_events_without_support_displays_empty_message(capsys) -> None:
+    controller, service, _session, employee = create_controller(
+        Role.GESTION
+    )
     service.list_events_without_support.return_value = []
 
     controller.list_events_without_support()
 
-    captured = capsys.readouterr()
-
-    assert "Aucun événement trouvé." in captured.out
+    assert "Aucun événement trouvé." in capsys.readouterr().out
     service.list_events_without_support.assert_called_once_with(employee)
 
 
-def test_list_events_without_support_displays_service_error(
+def test_list_assigned_events_displays_events(capsys) -> None:
+    controller, service, _session, employee = create_controller(
+        Role.SUPPORT
+    )
+    event = create_event_mock(support_id=employee.id)
+    service.list_assigned_events.return_value = [event]
+
+    controller.list_assigned_events()
+
+    output = capsys.readouterr().out
+
+    assert "Liste des événements" in output
+    assert "Support : 1" in output
+    service.list_assigned_events.assert_called_once_with(employee)
+
+
+def test_list_assigned_events_displays_empty_message(capsys) -> None:
+    controller, service, _session, employee = create_controller(
+        Role.SUPPORT
+    )
+    service.list_assigned_events.return_value = []
+
+    controller.list_assigned_events()
+
+    assert "Aucun événement trouvé." in capsys.readouterr().out
+    service.list_assigned_events.assert_called_once_with(employee)
+
+
+def test_assign_support_calls_service(
+    monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, employee = create_controller()
-    service.list_events_without_support.side_effect = AuthorizationError(
-        "Accès interdit."
+    controller, service, _session, employee = create_controller(
+        Role.GESTION
     )
-
-    controller.list_events_without_support()
-
-    captured = capsys.readouterr()
-
-    assert "Erreur : Accès interdit." in captured.out
-    service.list_events_without_support.assert_called_once_with(employee)
-
-
-def test_assign_support_calls_service(monkeypatch, capsys) -> None:
-    controller, service, _session, employee = create_controller()
-    event = create_event_mock(event_id=2, support_id=4)
+    event = create_event_mock(
+        event_id=2,
+        support_id=4,
+    )
     service.assign_support.return_value = event
 
     input_values = iter(["2", "4"])
@@ -501,9 +641,10 @@ def test_assign_support_calls_service(monkeypatch, capsys) -> None:
 
     controller.assign_support()
 
-    captured = capsys.readouterr()
-
-    assert "Support 4 affecté à l'événement 2." in captured.out
+    assert (
+        "Collaborateur support 4 affecté à l'événement 2."
+        in capsys.readouterr().out
+    )
     service.assign_support.assert_called_once_with(
         current_employee=employee,
         event_id=2,
@@ -515,14 +656,21 @@ def test_assign_support_stops_for_invalid_event_id(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, _employee = create_controller()
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
+    controller, service, _session, _employee = create_controller(
+        Role.GESTION
+    )
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
 
     controller.assign_support()
 
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
     service.assign_support.assert_not_called()
 
 
@@ -530,7 +678,10 @@ def test_assign_support_stops_for_invalid_support_id(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, _employee = create_controller()
+    controller, service, _session, _employee = create_controller(
+        Role.GESTION
+    )
+
     input_values = iter(["2", "abc"])
     monkeypatch.setattr(
         "builtins.input",
@@ -539,9 +690,10 @@ def test_assign_support_stops_for_invalid_support_id(
 
     controller.assign_support()
 
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
     service.assign_support.assert_not_called()
 
 
@@ -549,8 +701,12 @@ def test_assign_support_displays_service_error(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, employee = create_controller()
-    service.assign_support.side_effect = AuthorizationError("Affectation interdite.")
+    controller, service, _session, employee = create_controller(
+        Role.GESTION
+    )
+    service.assign_support.side_effect = AuthorizationError(
+        "Affectation interdite."
+    )
 
     input_values = iter(["2", "4"])
     monkeypatch.setattr(
@@ -560,9 +716,10 @@ def test_assign_support_displays_service_error(
 
     controller.assign_support()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Affectation interdite." in captured.out
+    assert (
+        "Erreur : Affectation interdite."
+        in capsys.readouterr().out
+    )
     service.assign_support.assert_called_once_with(
         current_employee=employee,
         event_id=2,
@@ -570,139 +727,44 @@ def test_assign_support_displays_service_error(
     )
 
 
-def test_remove_support_calls_service(monkeypatch, capsys) -> None:
-    controller, service, _session, employee = create_controller()
-    event = create_event_mock(event_id=2, support_id=None)
-    service.remove_support.return_value = event
+# ---------------------------------------------------------------------------
+# Menus par rôle
+# ---------------------------------------------------------------------------
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "2")
 
-    controller.remove_support()
-
-    captured = capsys.readouterr()
-
-    assert "Support retiré de l'événement 2." in captured.out
-    service.remove_support.assert_called_once_with(
-        current_employee=employee,
-        event_id=2,
+@pytest.mark.parametrize(
+    ("choice", "method_name"),
+    [
+        ("1", "list_events"),
+        ("2", "get_event"),
+        ("3", "list_events_without_support"),
+        ("4", "assign_support"),
+    ],
+)
+def test_management_menu_calls_selected_action(
+    monkeypatch,
+    choice,
+    method_name,
+) -> None:
+    controller, _service, _session, _employee = create_controller(
+        Role.GESTION
     )
 
-
-def test_remove_support_stops_for_invalid_event_id(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, _employee = create_controller()
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
-
-    controller.remove_support()
-
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
-    service.remove_support.assert_not_called()
-
-
-def test_remove_support_displays_service_error(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, employee = create_controller()
-    service.remove_support.side_effect = AuthorizationError("Retrait interdit.")
-
-    monkeypatch.setattr("builtins.input", lambda _message="": "2")
-
-    controller.remove_support()
-
-    captured = capsys.readouterr()
-
-    assert "Erreur : Retrait interdit." in captured.out
-    service.remove_support.assert_called_once_with(
-        current_employee=employee,
-        event_id=2,
+    selected_method = Mock()
+    monkeypatch.setattr(
+        controller,
+        method_name,
+        selected_method,
     )
-
-
-def test_delete_event_calls_service_when_confirmed(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, employee = create_controller()
-
-    input_values = iter(["2", "o"])
     monkeypatch.setattr(
         "builtins.input",
-        lambda _message="": next(input_values),
+        lambda _message="": choice,
     )
 
-    controller.delete_event()
+    should_return = controller._run_management_menu()
 
-    captured = capsys.readouterr()
-
-    assert "Événement supprimé avec succès." in captured.out
-    service.delete_event.assert_called_once_with(
-        current_employee=employee,
-        event_id=2,
-    )
-
-
-def test_delete_event_does_not_call_service_when_cancelled(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, _employee = create_controller()
-
-    input_values = iter(["2", "n"])
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
-    )
-
-    controller.delete_event()
-
-    captured = capsys.readouterr()
-
-    assert "Suppression annulée." in captured.out
-    service.delete_event.assert_not_called()
-
-
-def test_delete_event_rejects_invalid_identifier(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, _employee = create_controller()
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
-
-    controller.delete_event()
-
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
-    service.delete_event.assert_not_called()
-
-
-def test_delete_event_displays_service_error(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, employee = create_controller()
-    service.delete_event.side_effect = AuthorizationError("Suppression interdite.")
-
-    input_values = iter(["2", "o"])
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
-    )
-
-    controller.delete_event()
-
-    captured = capsys.readouterr()
-
-    assert "Erreur : Suppression interdite." in captured.out
-    service.delete_event.assert_called_once_with(
-        current_employee=employee,
-        event_id=2,
-    )
+    assert should_return is False
+    selected_method.assert_called_once_with()
 
 
 @pytest.mark.parametrize(
@@ -711,47 +773,153 @@ def test_delete_event_displays_service_error(
         ("1", "list_events"),
         ("2", "get_event"),
         ("3", "create_event"),
-        ("4", "update_event"),
-        ("5", "list_events_without_support"),
-        ("6", "assign_support"),
-        ("7", "remove_support"),
-        ("8", "delete_event"),
     ],
 )
-def test_run_calls_selected_action(
+def test_commercial_menu_calls_selected_action(
     monkeypatch,
-    choice: str,
-    method_name: str,
+    choice,
+    method_name,
 ) -> None:
-    controller, _service, _session, _employee = create_controller()
-    selected_method = Mock()
-    monkeypatch.setattr(controller, method_name, selected_method)
-
-    input_values = iter([choice, "0"])
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
+    controller, _service, _session, _employee = create_controller(
+        Role.COMMERCIAL
     )
 
-    controller.run()
+    selected_method = Mock()
+    monkeypatch.setattr(
+        controller,
+        method_name,
+        selected_method,
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": choice,
+    )
 
+    should_return = controller._run_commercial_menu()
+
+    assert should_return is False
     selected_method.assert_called_once_with()
 
 
-def test_run_displays_invalid_choice(monkeypatch, capsys) -> None:
-    controller, _service, _session, _employee = create_controller()
+@pytest.mark.parametrize(
+    ("choice", "method_name"),
+    [
+        ("1", "list_events"),
+        ("2", "get_event"),
+        ("3", "list_assigned_events"),
+        ("4", "update_event"),
+    ],
+)
+def test_support_menu_calls_selected_action(
+    monkeypatch,
+    choice,
+    method_name,
+) -> None:
+    controller, _service, _session, _employee = create_controller(
+        Role.SUPPORT
+    )
 
-    input_values = iter(["99", "0"])
+    selected_method = Mock()
+    monkeypatch.setattr(
+        controller,
+        method_name,
+        selected_method,
+    )
     monkeypatch.setattr(
         "builtins.input",
-        lambda _message="": next(input_values),
+        lambda _message="": choice,
+    )
+
+    should_return = controller._run_support_menu()
+
+    assert should_return is False
+    selected_method.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    "method_name",
+    [
+        "_run_management_menu",
+        "_run_commercial_menu",
+        "_run_support_menu",
+    ],
+)
+def test_role_menu_returns_on_zero(
+    monkeypatch,
+    method_name,
+) -> None:
+    controller, _service, _session, _employee = create_controller()
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "0",
+    )
+
+    assert getattr(controller, method_name)() is True
+
+
+@pytest.mark.parametrize(
+    ("role", "menu_method"),
+    [
+        (Role.GESTION, "_run_management_menu"),
+        (Role.COMMERCIAL, "_run_commercial_menu"),
+        (Role.SUPPORT, "_run_support_menu"),
+    ],
+)
+def test_run_dispatches_menu_by_role(
+    monkeypatch,
+    role,
+    menu_method,
+) -> None:
+    controller, _service, current_session, _employee = (
+        create_controller(role)
+    )
+
+    states = iter([True, False])
+    monkeypatch.setattr(
+        type(current_session),
+        "is_authenticated",
+        property(lambda _self: next(states, False)),
+    )
+
+    management_menu = Mock(return_value=False)
+    commercial_menu = Mock(return_value=False)
+    support_menu = Mock(return_value=False)
+
+    monkeypatch.setattr(
+        controller,
+        "_run_management_menu",
+        management_menu,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_run_commercial_menu",
+        commercial_menu,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_run_support_menu",
+        support_menu,
     )
 
     controller.run()
 
-    captured = capsys.readouterr()
+    menus = {
+        "_run_management_menu": management_menu,
+        "_run_commercial_menu": commercial_menu,
+        "_run_support_menu": support_menu,
+    }
 
-    assert "Choix invalide." in captured.out
+    for name, mocked_menu in menus.items():
+        if name == menu_method:
+            mocked_menu.assert_called_once_with()
+        else:
+            mocked_menu.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def test_get_current_employee_raises_when_session_is_empty() -> None:
@@ -762,7 +930,7 @@ def test_get_current_employee_raises_when_session_is_empty() -> None:
 
     with pytest.raises(
         RuntimeError,
-        match="Aucun employé connecté dans la session",
+        match="Aucun .* connecté dans la session",
     ):
         controller._get_current_employee()
 
@@ -777,8 +945,8 @@ def test_get_current_employee_raises_when_session_is_empty() -> None:
 )
 def test_ask_integer_returns_integer(
     monkeypatch,
-    raw_value: str,
-    expected: int,
+    raw_value,
+    expected,
 ) -> None:
     monkeypatch.setattr(
         "builtins.input",
@@ -792,46 +960,40 @@ def test_ask_integer_returns_none_for_invalid_value(
     monkeypatch,
     capsys,
 ) -> None:
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
 
     result = EventController._ask_integer("ID : ")
 
-    captured = capsys.readouterr()
-
     assert result is None
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
 
 
 def test_ask_optional_integer_returns_none_for_empty_value(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("builtins.input", lambda _message="": "   ")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "   ",
+    )
 
-    result = EventController._ask_optional_integer("Nombre : ")
-
-    assert result is None
-
-
-def test_ask_optional_integer_returns_integer(monkeypatch) -> None:
-    monkeypatch.setattr("builtins.input", lambda _message="": "150")
-
-    result = EventController._ask_optional_integer("Nombre : ")
-
-    assert result == 150
+    assert EventController._ask_optional_integer("Valeur : ") is None
 
 
-def test_ask_optional_integer_returns_none_for_invalid_value(
+def test_ask_optional_integer_returns_integer(
     monkeypatch,
-    capsys,
 ) -> None:
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "15",
+    )
 
-    result = EventController._ask_optional_integer("Nombre : ")
-
-    captured = capsys.readouterr()
-
-    assert result is None
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert EventController._ask_optional_integer("Valeur : ") == 15
 
 
 def test_ask_datetime_returns_datetime(monkeypatch) -> None:
@@ -840,9 +1002,9 @@ def test_ask_datetime_returns_datetime(monkeypatch) -> None:
         lambda _message="": "15/08/2026 18:30",
     )
 
-    result = EventController._ask_datetime("Date : ")
-
-    assert result == datetime(2026, 8, 15, 18, 30)
+    assert EventController._ask_datetime(
+        "Date : "
+    ) == datetime(2026, 8, 15, 18, 30)
 
 
 def test_ask_datetime_returns_none_for_invalid_value(
@@ -851,89 +1013,37 @@ def test_ask_datetime_returns_none_for_invalid_value(
 ) -> None:
     monkeypatch.setattr(
         "builtins.input",
-        lambda _message="": "2026-08-15",
+        lambda _message="": "invalid",
     )
 
     result = EventController._ask_datetime("Date : ")
 
-    captured = capsys.readouterr()
-
     assert result is None
-    assert "Format invalide. Utilisez JJ/MM/AAAA HH:MM." in captured.out
+    assert (
+        "Format invalide. Utilisez JJ/MM/AAAA HH:MM."
+        in capsys.readouterr().out
+    )
 
 
 def test_ask_optional_datetime_returns_none_for_empty_value(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("builtins.input", lambda _message="": "   ")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "",
+    )
 
-    result = EventController._ask_optional_datetime("Date : ")
-
-    assert result is None
+    assert EventController._ask_optional_datetime("Date : ") is None
 
 
-def test_ask_optional_datetime_returns_datetime(monkeypatch) -> None:
+def test_ask_optional_datetime_returns_datetime(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": "15/08/2026 18:30",
     )
 
-    result = EventController._ask_optional_datetime("Date : ")
-
-    assert result == datetime(2026, 8, 15, 18, 30)
-
-
-def test_ask_optional_datetime_returns_none_for_invalid_value(
-    monkeypatch,
-    capsys,
-) -> None:
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": "date invalide",
-    )
-
-    result = EventController._ask_optional_datetime("Date : ")
-
-    captured = capsys.readouterr()
-
-    assert result is None
-    assert "Format invalide. Utilisez JJ/MM/AAAA HH:MM." in captured.out
-
-
-def test_display_event_displays_unassigned_support(capsys) -> None:
-    event = create_event_mock(support_id=None)
-
-    EventController._display_event(event)
-
-    captured = capsys.readouterr()
-
-    assert "Support ID : Non affecté" in captured.out
-
-
-def test_display_event_list_displays_empty_message(capsys) -> None:
-    EventController._display_event_list([])
-
-    captured = capsys.readouterr()
-
-    assert "Aucun événement trouvé." in captured.out
-
-
-def test_display_event_list_displays_assigned_and_unassigned_support(
-    capsys,
-) -> None:
-    assigned_event = create_event_mock(
-        event_id=1,
-        support_id=4,
-    )
-    unassigned_event = create_event_mock(
-        event_id=2,
-        support_id=None,
-    )
-
-    EventController._display_event_list([assigned_event, unassigned_event])
-
-    captured = capsys.readouterr()
-
-    assert "Liste des événements" in captured.out
-    assert "Support : 4" in captured.out
-    assert "Support : Non affecté" in captured.out
+    assert EventController._ask_optional_datetime(
+        "Date : "
+    ) == datetime(2026, 8, 15, 18, 30)

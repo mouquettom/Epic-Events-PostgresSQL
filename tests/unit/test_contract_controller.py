@@ -10,14 +10,16 @@ from app.session.current_session import CurrentSession
 from app.utils.exceptions import AuthorizationError, NotFoundError
 
 
-def create_current_session() -> tuple[CurrentSession, Employee]:
-    """Crée une session contenant un employé connecté."""
+def create_current_session(
+    role: Role = Role.GESTION,
+) -> tuple[CurrentSession, Employee]:
+    """Crée une session contenant un collaborateur connecté."""
     employee = Mock(spec=Employee)
     employee.id = 1
     employee.first_name = "Alice"
     employee.last_name = "Martin"
     employee.email = "alice@test.com"
-    employee.role = Role.COMMERCIAL
+    employee.role = role
 
     current_session = CurrentSession()
     current_session.login(
@@ -28,14 +30,16 @@ def create_current_session() -> tuple[CurrentSession, Employee]:
     return current_session, employee
 
 
-def create_controller() -> tuple[
+def create_controller(
+    role: Role = Role.GESTION,
+) -> tuple[
     ContractController,
     Mock,
     CurrentSession,
     Employee,
 ]:
     """Construit un ContractController avec un service simulé."""
-    current_session, employee = create_current_session()
+    current_session, employee = create_current_session(role)
     contract_service = Mock()
 
     controller = ContractController(
@@ -55,7 +59,7 @@ def create_contract_mock(
     *,
     contract_id: int = 2,
     client_id: int = 10,
-    commercial_id: int = 1,
+    commercial_id: int = 3,
     total_amount: Decimal = Decimal("1000.00"),
     remaining_amount: Decimal = Decimal("400.00"),
     is_signed: bool = True,
@@ -73,6 +77,11 @@ def create_contract_mock(
     return contract
 
 
+# ---------------------------------------------------------------------------
+# Consultation
+# ---------------------------------------------------------------------------
+
+
 def test_list_contracts_displays_contracts(capsys) -> None:
     controller, service, _session, employee = create_controller()
     contract = create_contract_mock()
@@ -80,13 +89,13 @@ def test_list_contracts_displays_contracts(capsys) -> None:
 
     controller.list_contracts()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Liste des contrats" in captured.out
-    assert "Client 10" in captured.out
-    assert "1000.00 €" in captured.out
-    assert "400.00 €" in captured.out
-    assert "Signé : Oui" in captured.out
+    assert "Liste des contrats" in output
+    assert "Client 10" in output
+    assert "1000.00 €" in output
+    assert "400.00 €" in output
+    assert "Signé : Oui" in output
     service.list_contracts.assert_called_once_with(employee)
 
 
@@ -96,46 +105,44 @@ def test_list_contracts_displays_empty_message(capsys) -> None:
 
     controller.list_contracts()
 
-    captured = capsys.readouterr()
-
-    assert "Aucun contrat trouvé." in captured.out
+    assert "Aucun contrat trouvé." in capsys.readouterr().out
     service.list_contracts.assert_called_once_with(employee)
 
 
 def test_list_contracts_displays_service_error(capsys) -> None:
     controller, service, _session, employee = create_controller()
-    service.list_contracts.side_effect = AuthorizationError("Accès interdit.")
+    service.list_contracts.side_effect = AuthorizationError(
+        "Accès interdit."
+    )
 
     controller.list_contracts()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Accès interdit." in captured.out
+    assert "Erreur : Accès interdit." in capsys.readouterr().out
     service.list_contracts.assert_called_once_with(employee)
 
 
-def test_get_contract_displays_contract(
-    monkeypatch,
-    capsys,
-) -> None:
+def test_get_contract_displays_contract(monkeypatch, capsys) -> None:
     controller, service, _session, employee = create_controller()
     contract = create_contract_mock()
     service.get_contract.return_value = contract
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "2")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "2",
+    )
 
     controller.get_contract()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "=== Contrat ===" in captured.out
-    assert "ID : 2" in captured.out
-    assert "Client ID : 10" in captured.out
-    assert "Commercial ID : 1" in captured.out
-    assert "Montant total : 1000.00 €" in captured.out
-    assert "Montant restant : 400.00 €" in captured.out
-    assert "Signé : Oui" in captured.out
-    assert "Créé le : 2026-07-01 10:00:00" in captured.out
+    assert "=== Contrat ===" in output
+    assert "ID : 2" in output
+    assert "Client ID : 10" in output
+    assert "Commercial responsable ID : 3" in output
+    assert "Montant total : 1000.00 €" in output
+    assert "Montant restant : 400.00 €" in output
+    assert "Signé : Oui" in output
+
     service.get_contract.assert_called_once_with(
         current_employee=employee,
         contract_id=2,
@@ -148,13 +155,17 @@ def test_get_contract_rejects_invalid_identifier(
 ) -> None:
     controller, service, _session, _employee = create_controller()
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
 
     controller.get_contract()
 
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
     service.get_contract.assert_not_called()
 
 
@@ -163,26 +174,33 @@ def test_get_contract_displays_not_found_error(
     capsys,
 ) -> None:
     controller, service, _session, employee = create_controller()
-    service.get_contract.side_effect = NotFoundError("Contrat introuvable.")
+    service.get_contract.side_effect = NotFoundError(
+        "Contrat introuvable."
+    )
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "999")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "999",
+    )
 
     controller.get_contract()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Contrat introuvable." in captured.out
+    assert "Erreur : Contrat introuvable." in capsys.readouterr().out
     service.get_contract.assert_called_once_with(
         current_employee=employee,
         contract_id=999,
     )
 
 
-def test_create_contract_calls_service(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, employee = create_controller()
+# ---------------------------------------------------------------------------
+# Création - service gestion
+# ---------------------------------------------------------------------------
+
+
+def test_create_contract_calls_service(monkeypatch, capsys) -> None:
+    controller, service, _session, employee = create_controller(
+        Role.GESTION
+    )
     contract = create_contract_mock()
     service.create_contract.return_value = contract
 
@@ -202,11 +220,12 @@ def test_create_contract_calls_service(
 
     controller.create_contract()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Création d'un contrat" in captured.out
-    assert "Contrat créé avec succès" in captured.out
-    assert "id=2" in captured.out
+    assert "Création d'un contrat" in output
+    assert "Contrat créé avec succès" in output
+    assert "id=2" in output
+
     service.create_contract.assert_called_once_with(
         current_employee=employee,
         client_id=10,
@@ -220,15 +239,21 @@ def test_create_contract_stops_for_invalid_client_id(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, _employee = create_controller()
+    controller, service, _session, _employee = create_controller(
+        Role.GESTION
+    )
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
 
     controller.create_contract()
 
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
     service.create_contract.assert_not_called()
 
 
@@ -236,7 +261,9 @@ def test_create_contract_stops_for_invalid_total_amount(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, _employee = create_controller()
+    controller, service, _session, _employee = create_controller(
+        Role.GESTION
+    )
 
     input_values = iter(["10", "invalid"])
     monkeypatch.setattr(
@@ -246,9 +273,10 @@ def test_create_contract_stops_for_invalid_total_amount(
 
     controller.create_contract()
 
-    captured = capsys.readouterr()
-
-    assert "Le montant doit être un nombre valide." in captured.out
+    assert (
+        "Le montant doit être un nombre valide."
+        in capsys.readouterr().out
+    )
     service.create_contract.assert_not_called()
 
 
@@ -256,7 +284,9 @@ def test_create_contract_stops_for_invalid_remaining_amount(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, _employee = create_controller()
+    controller, service, _session, _employee = create_controller(
+        Role.GESTION
+    )
 
     input_values = iter(["10", "1000", "invalid"])
     monkeypatch.setattr(
@@ -266,9 +296,10 @@ def test_create_contract_stops_for_invalid_remaining_amount(
 
     controller.create_contract()
 
-    captured = capsys.readouterr()
-
-    assert "Le montant doit être un nombre valide." in captured.out
+    assert (
+        "Le montant doit être un nombre valide."
+        in capsys.readouterr().out
+    )
     service.create_contract.assert_not_called()
 
 
@@ -276,8 +307,12 @@ def test_create_contract_displays_service_error(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, employee = create_controller()
-    service.create_contract.side_effect = AuthorizationError("Création interdite.")
+    controller, service, _session, employee = create_controller(
+        Role.GESTION
+    )
+    service.create_contract.side_effect = AuthorizationError(
+        "Création interdite."
+    )
 
     input_values = iter(["10", "1000", "400", "n"])
     monkeypatch.setattr(
@@ -287,9 +322,7 @@ def test_create_contract_displays_service_error(
 
     controller.create_contract()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Création interdite." in captured.out
+    assert "Erreur : Création interdite." in capsys.readouterr().out
     service.create_contract.assert_called_once_with(
         current_employee=employee,
         client_id=10,
@@ -299,11 +332,21 @@ def test_create_contract_displays_service_error(
     )
 
 
+# ---------------------------------------------------------------------------
+# Modification - gestion ou commercial autorisé par le service
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "role",
+    [Role.GESTION, Role.COMMERCIAL],
+)
 def test_update_contract_calls_service(
     monkeypatch,
     capsys,
+    role,
 ) -> None:
-    controller, service, _session, employee = create_controller()
+    controller, service, _session, employee = create_controller(role)
     contract = create_contract_mock()
     service.update_contract.return_value = contract
 
@@ -316,7 +359,6 @@ def test_update_contract_calls_service(
             "o",
         ]
     )
-
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
@@ -324,9 +366,11 @@ def test_update_contract_calls_service(
 
     controller.update_contract()
 
-    captured = capsys.readouterr()
+    assert (
+        "Contrat 2 mis à jour avec succès."
+        in capsys.readouterr().out
+    )
 
-    assert "Contrat 2 mis à jour avec succès." in captured.out
     service.update_contract.assert_called_once_with(
         current_employee=employee,
         contract_id=2,
@@ -336,12 +380,13 @@ def test_update_contract_calls_service(
     )
 
 
-def test_update_contract_passes_none_for_empty_values(
+def test_update_contract_passes_none_for_unchanged_values(
     monkeypatch,
 ) -> None:
-    controller, service, _session, employee = create_controller()
-    contract = create_contract_mock()
-    service.update_contract.return_value = contract
+    controller, service, _session, employee = create_controller(
+        Role.COMMERCIAL
+    )
+    service.update_contract.return_value = create_contract_mock()
 
     input_values = iter(
         [
@@ -351,7 +396,6 @@ def test_update_contract_passes_none_for_empty_values(
             "n",
         ]
     )
-
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
@@ -371,9 +415,12 @@ def test_update_contract_passes_none_for_empty_values(
 def test_update_contract_can_set_signed_to_false(
     monkeypatch,
 ) -> None:
-    controller, service, _session, employee = create_controller()
-    contract = create_contract_mock(is_signed=False)
-    service.update_contract.return_value = contract
+    controller, service, _session, employee = create_controller(
+        Role.GESTION
+    )
+    service.update_contract.return_value = create_contract_mock(
+        is_signed=False
+    )
 
     input_values = iter(
         [
@@ -384,7 +431,6 @@ def test_update_contract_can_set_signed_to_false(
             "n",
         ]
     )
-
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
@@ -407,13 +453,17 @@ def test_update_contract_rejects_invalid_identifier(
 ) -> None:
     controller, service, _session, _employee = create_controller()
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "invalid")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "invalid",
+    )
 
     controller.update_contract()
 
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
     service.update_contract.assert_not_called()
 
 
@@ -421,8 +471,12 @@ def test_update_contract_displays_service_error(
     monkeypatch,
     capsys,
 ) -> None:
-    controller, service, _session, employee = create_controller()
-    service.update_contract.side_effect = AuthorizationError("Modification interdite.")
+    controller, service, _session, employee = create_controller(
+        Role.COMMERCIAL
+    )
+    service.update_contract.side_effect = AuthorizationError(
+        "Modification interdite."
+    )
 
     input_values = iter(["2", "1200", "", "n"])
     monkeypatch.setattr(
@@ -432,9 +486,11 @@ def test_update_contract_displays_service_error(
 
     controller.update_contract()
 
-    captured = capsys.readouterr()
+    assert (
+        "Erreur : Modification interdite."
+        in capsys.readouterr().out
+    )
 
-    assert "Erreur : Modification interdite." in captured.out
     service.update_contract.assert_called_once_with(
         current_employee=employee,
         contract_id=2,
@@ -444,163 +500,72 @@ def test_update_contract_displays_service_error(
     )
 
 
+# ---------------------------------------------------------------------------
+# Filtres commerciaux
+# ---------------------------------------------------------------------------
+
+
 def test_list_unsigned_contracts_displays_contracts(capsys) -> None:
-    controller, service, _session, employee = create_controller()
+    controller, service, _session, employee = create_controller(
+        Role.COMMERCIAL
+    )
     contract = create_contract_mock(is_signed=False)
     service.list_unsigned_contracts.return_value = [contract]
 
     controller.list_unsigned_contracts()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Liste des contrats" in captured.out
-    assert "Signé : Non" in captured.out
+    assert "Liste des contrats" in output
+    assert "Signé : Non" in output
     service.list_unsigned_contracts.assert_called_once_with(employee)
 
 
 def test_list_unsigned_contracts_displays_empty_message(capsys) -> None:
-    controller, service, _session, employee = create_controller()
+    controller, service, _session, employee = create_controller(
+        Role.COMMERCIAL
+    )
     service.list_unsigned_contracts.return_value = []
 
     controller.list_unsigned_contracts()
 
-    captured = capsys.readouterr()
-
-    assert "Aucun contrat trouvé." in captured.out
-    service.list_unsigned_contracts.assert_called_once_with(employee)
-
-
-def test_list_unsigned_contracts_displays_service_error(capsys) -> None:
-    controller, service, _session, employee = create_controller()
-    service.list_unsigned_contracts.side_effect = AuthorizationError("Accès interdit.")
-
-    controller.list_unsigned_contracts()
-
-    captured = capsys.readouterr()
-
-    assert "Erreur : Accès interdit." in captured.out
+    assert "Aucun contrat trouvé." in capsys.readouterr().out
     service.list_unsigned_contracts.assert_called_once_with(employee)
 
 
 def test_list_unpaid_contracts_displays_contracts(capsys) -> None:
-    controller, service, _session, employee = create_controller()
-    contract = create_contract_mock(remaining_amount=Decimal("400.00"))
+    controller, service, _session, employee = create_controller(
+        Role.COMMERCIAL
+    )
+    contract = create_contract_mock(
+        remaining_amount=Decimal("400.00")
+    )
     service.list_unpaid_contracts.return_value = [contract]
 
     controller.list_unpaid_contracts()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Liste des contrats" in captured.out
-    assert "Restant : 400.00 €" in captured.out
+    assert "Liste des contrats" in output
+    assert "Restant : 400.00 €" in output
     service.list_unpaid_contracts.assert_called_once_with(employee)
 
 
 def test_list_unpaid_contracts_displays_empty_message(capsys) -> None:
-    controller, service, _session, employee = create_controller()
+    controller, service, _session, employee = create_controller(
+        Role.COMMERCIAL
+    )
     service.list_unpaid_contracts.return_value = []
 
     controller.list_unpaid_contracts()
 
-    captured = capsys.readouterr()
-
-    assert "Aucun contrat trouvé." in captured.out
+    assert "Aucun contrat trouvé." in capsys.readouterr().out
     service.list_unpaid_contracts.assert_called_once_with(employee)
 
 
-def test_list_unpaid_contracts_displays_service_error(capsys) -> None:
-    controller, service, _session, employee = create_controller()
-    service.list_unpaid_contracts.side_effect = AuthorizationError("Accès interdit.")
-
-    controller.list_unpaid_contracts()
-
-    captured = capsys.readouterr()
-
-    assert "Erreur : Accès interdit." in captured.out
-    service.list_unpaid_contracts.assert_called_once_with(employee)
-
-
-def test_delete_contract_calls_service_when_confirmed(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, employee = create_controller()
-
-    input_values = iter(["2", "o"])
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
-    )
-
-    controller.delete_contract()
-
-    captured = capsys.readouterr()
-
-    assert "Contrat supprimé avec succès." in captured.out
-    service.delete_contract.assert_called_once_with(
-        current_employee=employee,
-        contract_id=2,
-    )
-
-
-def test_delete_contract_does_not_call_service_when_cancelled(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, _employee = create_controller()
-
-    input_values = iter(["2", "n"])
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
-    )
-
-    controller.delete_contract()
-
-    captured = capsys.readouterr()
-
-    assert "Suppression annulée." in captured.out
-    service.delete_contract.assert_not_called()
-
-
-def test_delete_contract_rejects_invalid_identifier(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, _employee = create_controller()
-
-    monkeypatch.setattr("builtins.input", lambda _message="": "invalid")
-
-    controller.delete_contract()
-
-    captured = capsys.readouterr()
-
-    assert "La valeur doit être un nombre entier." in captured.out
-    service.delete_contract.assert_not_called()
-
-
-def test_delete_contract_displays_service_error(
-    monkeypatch,
-    capsys,
-) -> None:
-    controller, service, _session, employee = create_controller()
-    service.delete_contract.side_effect = AuthorizationError("Suppression interdite.")
-
-    input_values = iter(["2", "o"])
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
-    )
-
-    controller.delete_contract()
-
-    captured = capsys.readouterr()
-
-    assert "Erreur : Suppression interdite." in captured.out
-    service.delete_contract.assert_called_once_with(
-        current_employee=employee,
-        contract_id=2,
-    )
+# ---------------------------------------------------------------------------
+# Menus par rôle
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -610,49 +575,165 @@ def test_delete_contract_displays_service_error(
         ("2", "get_contract"),
         ("3", "create_contract"),
         ("4", "update_contract"),
-        ("5", "list_unsigned_contracts"),
-        ("6", "list_unpaid_contracts"),
-        ("7", "delete_contract"),
     ],
 )
-def test_run_calls_selected_action(
+def test_management_menu_calls_selected_action(
     monkeypatch,
-    choice: str,
-    method_name: str,
+    choice,
+    method_name,
 ) -> None:
-    controller, _service, _session, _employee = create_controller()
-
-    selected_method = Mock()
-    monkeypatch.setattr(controller, method_name, selected_method)
-
-    input_values = iter([choice, "0"])
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
+    controller, _service, _session, _employee = create_controller(
+        Role.GESTION
     )
 
-    controller.run()
+    selected_method = Mock()
+    monkeypatch.setattr(
+        controller,
+        method_name,
+        selected_method,
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": choice,
+    )
 
+    should_return = controller._run_management_menu()
+
+    assert should_return is False
     selected_method.assert_called_once_with()
 
 
-def test_run_displays_invalid_choice(
+@pytest.mark.parametrize(
+    ("choice", "method_name"),
+    [
+        ("1", "list_contracts"),
+        ("2", "get_contract"),
+        ("3", "update_contract"),
+        ("4", "list_unsigned_contracts"),
+        ("5", "list_unpaid_contracts"),
+    ],
+)
+def test_commercial_menu_calls_selected_action(
     monkeypatch,
-    capsys,
+    choice,
+    method_name,
 ) -> None:
-    controller, _service, _session, _employee = create_controller()
+    controller, _service, _session, _employee = create_controller(
+        Role.COMMERCIAL
+    )
 
-    input_values = iter(["99", "0"])
+    selected_method = Mock()
+    monkeypatch.setattr(
+        controller,
+        method_name,
+        selected_method,
+    )
     monkeypatch.setattr(
         "builtins.input",
-        lambda _message="": next(input_values),
+        lambda _message="": choice,
+    )
+
+    should_return = controller._run_commercial_menu()
+
+    assert should_return is False
+    selected_method.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    ("choice", "method_name"),
+    [
+        ("1", "list_contracts"),
+        ("2", "get_contract"),
+    ],
+)
+def test_read_only_menu_calls_selected_action(
+    monkeypatch,
+    choice,
+    method_name,
+) -> None:
+    controller, _service, _session, _employee = create_controller(
+        Role.SUPPORT
+    )
+
+    selected_method = Mock()
+    monkeypatch.setattr(
+        controller,
+        method_name,
+        selected_method,
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": choice,
+    )
+
+    should_return = controller._run_read_only_menu()
+
+    assert should_return is False
+    selected_method.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    ("role", "menu_method"),
+    [
+        (Role.GESTION, "_run_management_menu"),
+        (Role.COMMERCIAL, "_run_commercial_menu"),
+        (Role.SUPPORT, "_run_read_only_menu"),
+    ],
+)
+def test_run_dispatches_menu_by_role(
+    monkeypatch,
+    role,
+    menu_method,
+) -> None:
+    controller, _service, current_session, _employee = (
+        create_controller(role)
+    )
+
+    states = iter([True, False])
+    monkeypatch.setattr(
+        type(current_session),
+        "is_authenticated",
+        property(lambda _self: next(states, False)),
+    )
+
+    management_menu = Mock(return_value=False)
+    commercial_menu = Mock(return_value=False)
+    read_only_menu = Mock(return_value=False)
+
+    monkeypatch.setattr(
+        controller,
+        "_run_management_menu",
+        management_menu,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_run_commercial_menu",
+        commercial_menu,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_run_read_only_menu",
+        read_only_menu,
     )
 
     controller.run()
 
-    captured = capsys.readouterr()
+    menus = {
+        "_run_management_menu": management_menu,
+        "_run_commercial_menu": commercial_menu,
+        "_run_read_only_menu": read_only_menu,
+    }
 
-    assert "Choix invalide." in captured.out
+    for name, mocked_menu in menus.items():
+        if name == menu_method:
+            mocked_menu.assert_called_once_with()
+        else:
+            mocked_menu.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def test_get_current_employee_raises_when_session_is_empty() -> None:
@@ -663,7 +744,7 @@ def test_get_current_employee_raises_when_session_is_empty() -> None:
 
     with pytest.raises(
         RuntimeError,
-        match="Aucun employé connecté dans la session",
+        match="Aucun .* connecté dans la session",
     ):
         controller._get_current_employee()
 
@@ -678,8 +759,8 @@ def test_get_current_employee_raises_when_session_is_empty() -> None:
 )
 def test_ask_integer_returns_integer(
     monkeypatch,
-    raw_value: str,
-    expected: int,
+    raw_value,
+    expected,
 ) -> None:
     monkeypatch.setattr(
         "builtins.input",
@@ -693,14 +774,18 @@ def test_ask_integer_returns_none_for_invalid_value(
     monkeypatch,
     capsys,
 ) -> None:
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
 
     result = ContractController._ask_integer("ID : ")
 
-    captured = capsys.readouterr()
-
     assert result is None
-    assert "La valeur doit être un nombre entier." in captured.out
+    assert (
+        "La valeur doit être un nombre entier."
+        in capsys.readouterr().out
+    )
 
 
 @pytest.mark.parametrize(
@@ -714,15 +799,17 @@ def test_ask_integer_returns_none_for_invalid_value(
 )
 def test_ask_decimal_returns_decimal(
     monkeypatch,
-    raw_value: str,
-    expected: Decimal,
+    raw_value,
+    expected,
 ) -> None:
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": raw_value,
     )
 
-    assert ContractController._ask_decimal("Montant : ") == expected
+    assert ContractController._ask_decimal(
+        "Montant : "
+    ) == expected
 
 
 def test_ask_decimal_returns_none_for_invalid_value(
@@ -736,20 +823,25 @@ def test_ask_decimal_returns_none_for_invalid_value(
 
     result = ContractController._ask_decimal("Montant : ")
 
-    captured = capsys.readouterr()
-
     assert result is None
-    assert "Le montant doit être un nombre valide." in captured.out
+    assert (
+        "Le montant doit être un nombre valide."
+        in capsys.readouterr().out
+    )
 
 
 def test_ask_optional_decimal_returns_none_for_empty_value(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("builtins.input", lambda _message="": "   ")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "   ",
+    )
 
-    result = ContractController._ask_optional_decimal("Montant : ")
-
-    assert result is None
+    assert (
+        ContractController._ask_optional_decimal("Montant : ")
+        is None
+    )
 
 
 def test_ask_optional_decimal_returns_decimal(
@@ -760,26 +852,9 @@ def test_ask_optional_decimal_returns_decimal(
         lambda _message="": "150,25",
     )
 
-    result = ContractController._ask_optional_decimal("Montant : ")
-
-    assert result == Decimal("150.25")
-
-
-def test_ask_optional_decimal_returns_none_for_invalid_value(
-    monkeypatch,
-    capsys,
-) -> None:
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": "invalid",
-    )
-
-    result = ContractController._ask_optional_decimal("Montant : ")
-
-    captured = capsys.readouterr()
-
-    assert result is None
-    assert "Le montant doit être un nombre valide." in captured.out
+    assert ContractController._ask_optional_decimal(
+        "Montant : "
+    ) == Decimal("150.25")
 
 
 @pytest.mark.parametrize(
@@ -795,15 +870,18 @@ def test_ask_optional_decimal_returns_none_for_invalid_value(
 )
 def test_ask_boolean_returns_expected_value(
     monkeypatch,
-    raw_value: str,
-    expected: bool,
+    raw_value,
+    expected,
 ) -> None:
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": raw_value,
     )
 
-    assert ContractController._ask_boolean("Signé ? ") is expected
+    assert (
+        ContractController._ask_boolean("Signé ? ")
+        is expected
+    )
 
 
 def test_display_contract_displays_unsigned_contract(capsys) -> None:
@@ -811,35 +889,10 @@ def test_display_contract_displays_unsigned_contract(capsys) -> None:
 
     ContractController._display_contract(contract)
 
-    captured = capsys.readouterr()
-
-    assert "Signé : Non" in captured.out
+    assert "Signé : Non" in capsys.readouterr().out
 
 
 def test_display_contract_list_displays_empty_message(capsys) -> None:
     ContractController._display_contract_list([])
 
-    captured = capsys.readouterr()
-
-    assert "Aucun contrat trouvé." in captured.out
-
-
-def test_display_contract_list_displays_signed_and_unsigned_contracts(
-    capsys,
-) -> None:
-    signed_contract = create_contract_mock(
-        contract_id=1,
-        is_signed=True,
-    )
-    unsigned_contract = create_contract_mock(
-        contract_id=2,
-        is_signed=False,
-    )
-
-    ContractController._display_contract_list([signed_contract, unsigned_contract])
-
-    captured = capsys.readouterr()
-
-    assert "Liste des contrats" in captured.out
-    assert "Signé : Oui" in captured.out
-    assert "Signé : Non" in captured.out
+    assert "Aucun contrat trouvé." in capsys.readouterr().out

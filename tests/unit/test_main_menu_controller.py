@@ -17,7 +17,9 @@ class SessionStub:
         authentication_states: list[bool] | None = None,
     ) -> None:
         self.current_employee = employee
-        self._authentication_states = iter(authentication_states or [True, False])
+        self._authentication_states = iter(
+            authentication_states or [True, False]
+        )
 
     @property
     def is_authenticated(self) -> bool:
@@ -27,7 +29,7 @@ class SessionStub:
 def create_employee(
     role: Role = Role.GESTION,
 ):
-    """Crée un employé minimal pour les tests du menu."""
+    """Crée un collaborateur minimal pour les tests du menu."""
     return SimpleNamespace(
         id=1,
         first_name="Alice",
@@ -51,7 +53,8 @@ def create_controller(
     Mock,
     Mock,
 ]:
-    """Construit le menu principal avec tous ses contrôleurs simulés."""
+    """Construit le menu principal avec ses contrôleurs simulés."""
+
     if employee is None:
         employee = create_employee(role)
 
@@ -86,6 +89,11 @@ def create_controller(
     )
 
 
+# ---------------------------------------------------------------------------
+# run
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.parametrize(
     ("role", "menu_method_name"),
     [
@@ -96,8 +104,8 @@ def create_controller(
 )
 def test_run_dispatches_to_menu_matching_employee_role(
     monkeypatch,
-    role: Role,
-    menu_method_name: str,
+    role,
+    menu_method_name,
 ) -> None:
     (
         controller,
@@ -113,7 +121,9 @@ def test_run_dispatches_to_menu_matching_employee_role(
     )
 
     display_header = Mock()
-    selected_menu = Mock()
+    management_menu = Mock()
+    commercial_menu = Mock()
+    support_menu = Mock()
 
     monkeypatch.setattr(
         controller,
@@ -122,14 +132,35 @@ def test_run_dispatches_to_menu_matching_employee_role(
     )
     monkeypatch.setattr(
         controller,
-        menu_method_name,
-        selected_menu,
+        "_run_management_menu",
+        management_menu,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_run_commercial_menu",
+        commercial_menu,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_run_support_menu",
+        support_menu,
     )
 
     controller.run()
 
     display_header.assert_called_once_with()
-    selected_menu.assert_called_once_with()
+
+    menus = {
+        "_run_management_menu": management_menu,
+        "_run_commercial_menu": commercial_menu,
+        "_run_support_menu": support_menu,
+    }
+
+    for name, menu_mock in menus.items():
+        if name == menu_method_name:
+            menu_mock.assert_called_once_with()
+        else:
+            menu_mock.assert_not_called()
 
 
 def test_run_returns_when_authenticated_session_has_no_employee(
@@ -137,17 +168,17 @@ def test_run_returns_when_authenticated_session_has_no_employee(
 ) -> None:
     (
         controller,
-        _session,
-        _auth,
+        session,
+        auth_controller,
         _employee_controller,
         _client_controller,
         _contract_controller,
         _event_controller,
     ) = create_controller(
-        employee=None,
         authentication_states=[True],
     )
-    controller.current_session.current_employee = None
+
+    session.current_employee = None
 
     display_header = Mock()
     management_menu = Mock()
@@ -181,6 +212,7 @@ def test_run_returns_when_authenticated_session_has_no_employee(
     management_menu.assert_not_called()
     commercial_menu.assert_not_called()
     support_menu.assert_not_called()
+    auth_controller.logout.assert_not_called()
 
 
 def test_run_does_nothing_when_session_is_not_authenticated(
@@ -194,9 +226,12 @@ def test_run_does_nothing_when_session_is_not_authenticated(
         _client_controller,
         _contract_controller,
         _event_controller,
-    ) = create_controller(authentication_states=[False])
+    ) = create_controller(
+        authentication_states=[False],
+    )
 
     display_header = Mock()
+
     monkeypatch.setattr(
         controller,
         "_display_header",
@@ -206,6 +241,39 @@ def test_run_does_nothing_when_session_is_not_authenticated(
     controller.run()
 
     display_header.assert_not_called()
+
+
+def test_run_logs_out_unknown_role(
+    monkeypatch,
+    capsys,
+) -> None:
+    employee = create_employee()
+    employee.role = SimpleNamespace(value="UNKNOWN")
+
+    (
+        controller,
+        _session,
+        auth_controller,
+        _employee_controller,
+        _client_controller,
+        _contract_controller,
+        _event_controller,
+    ) = create_controller(
+        employee=employee,
+        authentication_states=[True, False],
+    )
+
+    controller.run()
+
+    output = capsys.readouterr().out
+
+    assert "Rôle inconnu. Déconnexion de l'application." in output
+    auth_controller.logout.assert_called_once_with()
+
+
+# ---------------------------------------------------------------------------
+# Header
+# ---------------------------------------------------------------------------
 
 
 def test_display_header_displays_connected_employee(capsys) -> None:
@@ -221,12 +289,12 @@ def test_display_header_displays_connected_employee(capsys) -> None:
 
     controller._display_header()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "EPIC EVENTS CRM" in captured.out
-    assert "Utilisateur : Alice Martin" in captured.out
-    assert f"Rôle : {Role.GESTION.value}" in captured.out
-    assert "=" * 45 in captured.out
+    assert "EPIC EVENTS CRM" in output
+    assert "Collaborateur : Alice Martin" in output
+    assert f"Rôle : {Role.GESTION.value}" in output
+    assert "=" * 45 in output
 
 
 def test_display_header_returns_when_employee_is_missing(
@@ -246,13 +314,16 @@ def test_display_header_returns_when_employee_is_missing(
 
     controller._display_header()
 
-    captured = capsys.readouterr()
+    assert capsys.readouterr().out == ""
 
-    assert captured.out == ""
+
+# ---------------------------------------------------------------------------
+# Menu gestion
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    ("choice", "controller_position"),
+    ("choice", "controller_name"),
     [
         ("1", "employee"),
         ("2", "client"),
@@ -262,8 +333,8 @@ def test_display_header_returns_when_employee_is_missing(
 )
 def test_management_menu_calls_selected_controller(
     monkeypatch,
-    choice: str,
-    controller_position: str,
+    choice,
+    controller_name,
 ) -> None:
     (
         controller,
@@ -289,8 +360,38 @@ def test_management_menu_calls_selected_controller(
 
     controller._run_management_menu()
 
-    controllers[controller_position].run.assert_called_once_with()
+    controllers[controller_name].run.assert_called_once_with()
     auth_controller.logout.assert_not_called()
+
+
+def test_management_menu_displays_expected_actions(
+    monkeypatch,
+    capsys,
+) -> None:
+    (
+        controller,
+        _session,
+        _auth_controller,
+        _employee_controller,
+        _client_controller,
+        _contract_controller,
+        _event_controller,
+    ) = create_controller(role=Role.GESTION)
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "99",
+    )
+
+    controller._run_management_menu()
+
+    output = capsys.readouterr().out
+
+    assert "1. Gérer les collaborateurs" in output
+    assert "2. Consulter les clients" in output
+    assert "3. Gérer les contrats" in output
+    assert "4. Gérer les événements" in output
+    assert "0. Se déconnecter" in output
 
 
 def test_management_menu_logs_out(monkeypatch) -> None:
@@ -339,9 +440,7 @@ def test_management_menu_displays_invalid_choice(
 
     controller._run_management_menu()
 
-    captured = capsys.readouterr()
-
-    assert "Choix invalide." in captured.out
+    assert "Choix invalide." in capsys.readouterr().out
     auth_controller.logout.assert_not_called()
     employee_controller.run.assert_not_called()
     client_controller.run.assert_not_called()
@@ -349,8 +448,13 @@ def test_management_menu_displays_invalid_choice(
     event_controller.run.assert_not_called()
 
 
+# ---------------------------------------------------------------------------
+# Menu commercial
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.parametrize(
-    ("choice", "controller_position"),
+    ("choice", "controller_name"),
     [
         ("1", "client"),
         ("2", "contract"),
@@ -359,8 +463,8 @@ def test_management_menu_displays_invalid_choice(
 )
 def test_commercial_menu_calls_selected_controller(
     monkeypatch,
-    choice: str,
-    controller_position: str,
+    choice,
+    controller_name,
 ) -> None:
     (
         controller,
@@ -385,9 +489,38 @@ def test_commercial_menu_calls_selected_controller(
 
     controller._run_commercial_menu()
 
-    controllers[controller_position].run.assert_called_once_with()
+    controllers[controller_name].run.assert_called_once_with()
     auth_controller.logout.assert_not_called()
     employee_controller.run.assert_not_called()
+
+
+def test_commercial_menu_displays_expected_actions(
+    monkeypatch,
+    capsys,
+) -> None:
+    (
+        controller,
+        _session,
+        _auth_controller,
+        _employee_controller,
+        _client_controller,
+        _contract_controller,
+        _event_controller,
+    ) = create_controller(role=Role.COMMERCIAL)
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "99",
+    )
+
+    controller._run_commercial_menu()
+
+    output = capsys.readouterr().out
+
+    assert "1. Consulter et gérer les clients" in output
+    assert "2. Consulter et suivre les contrats" in output
+    assert "3. Consulter et créer des événements" in output
+    assert "0. Se déconnecter" in output
 
 
 def test_commercial_menu_logs_out(monkeypatch) -> None:
@@ -436,9 +569,7 @@ def test_commercial_menu_displays_invalid_choice(
 
     controller._run_commercial_menu()
 
-    captured = capsys.readouterr()
-
-    assert "Choix invalide." in captured.out
+    assert "Choix invalide." in capsys.readouterr().out
     auth_controller.logout.assert_not_called()
     employee_controller.run.assert_not_called()
     client_controller.run.assert_not_called()
@@ -446,9 +577,12 @@ def test_commercial_menu_displays_invalid_choice(
     event_controller.run.assert_not_called()
 
 
-def test_support_menu_calls_event_controller(
-    monkeypatch,
-) -> None:
+# ---------------------------------------------------------------------------
+# Menu support
+# ---------------------------------------------------------------------------
+
+
+def test_support_menu_calls_event_controller(monkeypatch) -> None:
     (
         controller,
         _session,
@@ -461,7 +595,7 @@ def test_support_menu_calls_event_controller(
 
     monkeypatch.setattr(
         "builtins.input",
-        lambda _message="": "1",
+        lambda _message="": "3",
     )
 
     controller._run_support_menu()
@@ -471,6 +605,35 @@ def test_support_menu_calls_event_controller(
     employee_controller.run.assert_not_called()
     client_controller.run.assert_not_called()
     contract_controller.run.assert_not_called()
+
+
+def test_support_menu_displays_expected_actions(
+    monkeypatch,
+    capsys,
+) -> None:
+    (
+        controller,
+        _session,
+        _auth_controller,
+        _employee_controller,
+        _client_controller,
+        _contract_controller,
+        _event_controller,
+    ) = create_controller(role=Role.SUPPORT)
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "99",
+    )
+
+    controller._run_support_menu()
+
+    output = capsys.readouterr().out
+
+    assert "1. Consulter les clients" in output
+    assert "2. Consulter les contrats" in output
+    assert "3. Consulter et suivre les événements" in output
+    assert "0. Se déconnecter" in output
 
 
 def test_support_menu_logs_out(monkeypatch) -> None:
@@ -519,19 +682,9 @@ def test_support_menu_displays_invalid_choice(
 
     controller._run_support_menu()
 
-    captured = capsys.readouterr()
-
-    assert "Choix invalide." in captured.out
+    assert "Choix invalide." in capsys.readouterr().out
     auth_controller.logout.assert_not_called()
     employee_controller.run.assert_not_called()
     client_controller.run.assert_not_called()
     contract_controller.run.assert_not_called()
     event_controller.run.assert_not_called()
-
-
-def test_not_implemented_displays_feature_name(capsys) -> None:
-    MainMenuController._not_implemented("Gestion des statistiques")
-
-    captured = capsys.readouterr()
-
-    assert "Gestion des statistiques : fonctionnalité à venir." in captured.out

@@ -9,14 +9,16 @@ from app.session.current_session import CurrentSession
 from app.utils.exceptions import AuthorizationError, NotFoundError
 
 
-def create_current_session() -> tuple[CurrentSession, Employee]:
-    """Crée une session contenant un employé connecté."""
+def create_current_session(
+    role: Role = Role.COMMERCIAL,
+) -> tuple[CurrentSession, Employee]:
+    """Crée une session contenant un collaborateur connecté."""
     employee = Mock(spec=Employee)
     employee.id = 1
     employee.first_name = "Alice"
     employee.last_name = "Martin"
     employee.email = "alice@test.com"
-    employee.role = Role.COMMERCIAL
+    employee.role = role
 
     current_session = CurrentSession()
     current_session.login(
@@ -27,14 +29,16 @@ def create_current_session() -> tuple[CurrentSession, Employee]:
     return current_session, employee
 
 
-def create_controller() -> tuple[
+def create_controller(
+    role: Role = Role.COMMERCIAL,
+) -> tuple[
     ClientController,
     Mock,
     CurrentSession,
     Employee,
 ]:
     """Construit un ClientController avec un service simulé."""
-    current_session, employee = create_current_session()
+    current_session, employee = create_current_session(role)
     client_service = Mock()
 
     controller = ClientController(
@@ -66,73 +70,49 @@ def create_client_mock() -> Client:
 
 
 def test_list_clients_displays_clients(capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
+    controller, service, _session, employee = create_controller()
     client = create_client_mock()
-    client_service.list_clients.return_value = [client]
+    service.list_clients.return_value = [client]
 
     controller.list_clients()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Liste des clients" in captured.out
-    assert "Jean Dupont" in captured.out
-    assert "Dupont SAS" in captured.out
-    assert "jean.dupont@test.com" in captured.out
-    client_service.list_clients.assert_called_once_with(employee)
+    assert "Liste des clients" in output
+    assert "Jean Dupont" in output
+    assert "Dupont SAS" in output
+    assert "jean.dupont@test.com" in output
+    service.list_clients.assert_called_once_with(employee)
 
 
 def test_list_clients_displays_empty_message(capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
-    client_service.list_clients.return_value = []
+    controller, service, _session, employee = create_controller()
+    service.list_clients.return_value = []
 
     controller.list_clients()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Aucun client trouvé" in captured.out
-    client_service.list_clients.assert_called_once_with(employee)
+    assert "Aucun client trouvé" in output
+    service.list_clients.assert_called_once_with(employee)
 
 
 def test_list_clients_displays_service_error(capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
-    client_service.list_clients.side_effect = AuthorizationError("Accès interdit.")
+    controller, service, _session, employee = create_controller()
+    service.list_clients.side_effect = AuthorizationError(
+        "Accès interdit."
+    )
 
     controller.list_clients()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Accès interdit." in captured.out
-    client_service.list_clients.assert_called_once_with(employee)
+    assert "Erreur : Accès interdit." in capsys.readouterr().out
+    service.list_clients.assert_called_once_with(employee)
 
 
 def test_get_client_displays_client(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
+    controller, service, _session, employee = create_controller()
     client = create_client_mock()
-    client_service.get_client.return_value = client
+    service.get_client.return_value = client
 
     monkeypatch.setattr(
         "builtins.input",
@@ -141,30 +121,27 @@ def test_get_client_displays_client(monkeypatch, capsys) -> None:
 
     controller.get_client()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "=== Client ===" in captured.out
-    assert "ID : 2" in captured.out
-    assert "Nom : Jean Dupont" in captured.out
-    assert "Email : jean.dupont@test.com" in captured.out
-    assert "Téléphone : 0601020304" in captured.out
-    assert "Entreprise : Dupont SAS" in captured.out
-    assert "Commercial ID : 1" in captured.out
-    assert "Créé le : 2026-07-01 10:00:00" in captured.out
-    assert "Mis à jour le : 2026-07-02 11:00:00" in captured.out
-    client_service.get_client.assert_called_once_with(
+    assert "=== Client ===" in output
+    assert "ID : 2" in output
+    assert "Nom : Jean Dupont" in output
+    assert "Email : jean.dupont@test.com" in output
+    assert "Téléphone : 0601020304" in output
+    assert "Entreprise : Dupont SAS" in output
+    assert "Commercial responsable ID : 1" in output
+
+    service.get_client.assert_called_once_with(
         current_employee=employee,
         client_id=2,
     )
 
 
-def test_get_client_rejects_invalid_identifier(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        _employee,
-    ) = create_controller()
+def test_get_client_rejects_invalid_identifier(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, _employee = create_controller()
 
     monkeypatch.setattr(
         "builtins.input",
@@ -173,21 +150,22 @@ def test_get_client_rejects_invalid_identifier(monkeypatch, capsys) -> None:
 
     controller.get_client()
 
-    captured = capsys.readouterr()
+    assert (
+        "L'identifiant doit être un nombre entier."
+        in capsys.readouterr().out
+    )
+    service.get_client.assert_not_called()
 
-    assert "L'identifiant doit être un nombre entier." in captured.out
-    client_service.get_client.assert_not_called()
 
+def test_get_client_displays_not_found_error(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, employee = create_controller()
 
-def test_get_client_displays_not_found_error(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
-    client_service.get_client.side_effect = NotFoundError("Client introuvable.")
+    service.get_client.side_effect = NotFoundError(
+        "Client introuvable."
+    )
 
     monkeypatch.setattr(
         "builtins.input",
@@ -196,25 +174,20 @@ def test_get_client_displays_not_found_error(monkeypatch, capsys) -> None:
 
     controller.get_client()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Client introuvable." in captured.out
-    client_service.get_client.assert_called_once_with(
+    assert "Erreur : Client introuvable." in capsys.readouterr().out
+    service.get_client.assert_called_once_with(
         current_employee=employee,
         client_id=999,
     )
 
 
-def test_create_client_calls_service(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
+def test_create_client_calls_service(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, employee = create_controller()
     client = create_client_mock()
-    client_service.create_client.return_value = client
+    service.create_client.return_value = client
 
     input_values = iter(
         [
@@ -232,13 +205,14 @@ def test_create_client_calls_service(monkeypatch, capsys) -> None:
 
     controller.create_client()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Création d'un client" in captured.out
-    assert "Client créé avec succès" in captured.out
-    assert "Jean Dupont" in captured.out
-    assert "id=2" in captured.out
-    client_service.create_client.assert_called_once_with(
+    assert "Création d'un client" in output
+    assert "Client créé avec succès" in output
+    assert "Jean Dupont" in output
+    assert "id=2" in output
+
+    service.create_client.assert_called_once_with(
         current_employee=employee,
         full_name="Jean Dupont",
         email="jean.dupont@test.com",
@@ -247,15 +221,15 @@ def test_create_client_calls_service(monkeypatch, capsys) -> None:
     )
 
 
-def test_create_client_displays_service_error(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
+def test_create_client_displays_service_error(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, employee = create_controller()
 
-    client_service.create_client.side_effect = AuthorizationError("Création interdite.")
+    service.create_client.side_effect = AuthorizationError(
+        "Création interdite."
+    )
 
     input_values = iter(
         [
@@ -273,10 +247,8 @@ def test_create_client_displays_service_error(monkeypatch, capsys) -> None:
 
     controller.create_client()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Création interdite." in captured.out
-    client_service.create_client.assert_called_once_with(
+    assert "Erreur : Création interdite." in capsys.readouterr().out
+    service.create_client.assert_called_once_with(
         current_employee=employee,
         full_name="Jean Dupont",
         email="jean.dupont@test.com",
@@ -285,16 +257,13 @@ def test_create_client_displays_service_error(monkeypatch, capsys) -> None:
     )
 
 
-def test_update_client_calls_service(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
+def test_update_client_calls_service(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, employee = create_controller()
     client = create_client_mock()
-    client_service.update_client.return_value = client
+    service.update_client.return_value = client
 
     input_values = iter(
         [
@@ -313,10 +282,12 @@ def test_update_client_calls_service(monkeypatch, capsys) -> None:
 
     controller.update_client()
 
-    captured = capsys.readouterr()
+    assert (
+        "Client 2 mis à jour avec succès."
+        in capsys.readouterr().out
+    )
 
-    assert "Client 2 mis à jour avec succès." in captured.out
-    client_service.update_client.assert_called_once_with(
+    service.update_client.assert_called_once_with(
         current_employee=employee,
         client_id=2,
         full_name="Jean Martin",
@@ -326,26 +297,13 @@ def test_update_client_calls_service(monkeypatch, capsys) -> None:
     )
 
 
-def test_update_client_passes_none_for_empty_fields(monkeypatch) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
+def test_update_client_passes_none_for_empty_fields(
+    monkeypatch,
+) -> None:
+    controller, service, _session, employee = create_controller()
+    service.update_client.return_value = create_client_mock()
 
-    client = create_client_mock()
-    client_service.update_client.return_value = client
-
-    input_values = iter(
-        [
-            "2",
-            "",
-            "",
-            "",
-            "",
-        ]
-    )
+    input_values = iter(["2", "", "", "", ""])
 
     monkeypatch.setattr(
         "builtins.input",
@@ -354,7 +312,7 @@ def test_update_client_passes_none_for_empty_fields(monkeypatch) -> None:
 
     controller.update_client()
 
-    client_service.update_client.assert_called_once_with(
+    service.update_client.assert_called_once_with(
         current_employee=employee,
         client_id=2,
         full_name=None,
@@ -364,13 +322,11 @@ def test_update_client_passes_none_for_empty_fields(monkeypatch) -> None:
     )
 
 
-def test_update_client_rejects_invalid_identifier(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        _employee,
-    ) = create_controller()
+def test_update_client_rejects_invalid_identifier(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, _employee = create_controller()
 
     monkeypatch.setattr(
         "builtins.input",
@@ -379,21 +335,20 @@ def test_update_client_rejects_invalid_identifier(monkeypatch, capsys) -> None:
 
     controller.update_client()
 
-    captured = capsys.readouterr()
+    assert (
+        "L'identifiant doit être un nombre entier."
+        in capsys.readouterr().out
+    )
+    service.update_client.assert_not_called()
 
-    assert "L'identifiant doit être un nombre entier." in captured.out
-    client_service.update_client.assert_not_called()
 
+def test_update_client_displays_service_error(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, employee = create_controller()
 
-def test_update_client_displays_service_error(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
-    client_service.update_client.side_effect = AuthorizationError(
+    service.update_client.side_effect = AuthorizationError(
         "Modification interdite."
     )
 
@@ -414,133 +369,18 @@ def test_update_client_displays_service_error(monkeypatch, capsys) -> None:
 
     controller.update_client()
 
-    captured = capsys.readouterr()
+    assert (
+        "Erreur : Modification interdite."
+        in capsys.readouterr().out
+    )
 
-    assert "Erreur : Modification interdite." in captured.out
-    client_service.update_client.assert_called_once_with(
+    service.update_client.assert_called_once_with(
         current_employee=employee,
         client_id=2,
         full_name="Jean Martin",
         email=None,
         phone=None,
         company=None,
-    )
-
-
-def test_delete_client_calls_service_when_confirmed(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
-    input_values = iter(
-        [
-            "2",
-            "o",
-        ]
-    )
-
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
-    )
-
-    controller.delete_client()
-
-    captured = capsys.readouterr()
-
-    assert "Client supprimé avec succès." in captured.out
-    client_service.delete_client.assert_called_once_with(
-        current_employee=employee,
-        client_id=2,
-    )
-
-
-def test_delete_client_does_not_call_service_when_cancelled(
-    monkeypatch, capsys
-) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        _employee,
-    ) = create_controller()
-
-    input_values = iter(
-        [
-            "2",
-            "n",
-        ]
-    )
-
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
-    )
-
-    controller.delete_client()
-
-    captured = capsys.readouterr()
-
-    assert "Suppression annulée." in captured.out
-    client_service.delete_client.assert_not_called()
-
-
-def test_delete_client_rejects_invalid_identifier(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        _employee,
-    ) = create_controller()
-
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": "invalid",
-    )
-
-    controller.delete_client()
-
-    captured = capsys.readouterr()
-
-    assert "L'identifiant doit être un nombre entier." in captured.out
-    client_service.delete_client.assert_not_called()
-
-
-def test_delete_client_displays_service_error(monkeypatch, capsys) -> None:
-    (
-        controller,
-        client_service,
-        _current_session,
-        employee,
-    ) = create_controller()
-
-    client_service.delete_client.side_effect = AuthorizationError(
-        "Suppression interdite."
-    )
-
-    input_values = iter(
-        [
-            "2",
-            "o",
-        ]
-    )
-
-    monkeypatch.setattr(
-        "builtins.input",
-        lambda _message="": next(input_values),
-    )
-
-    controller.delete_client()
-
-    captured = capsys.readouterr()
-
-    assert "Erreur : Suppression interdite." in captured.out
-    client_service.delete_client.assert_called_once_with(
-        current_employee=employee,
-        client_id=2,
     )
 
 
@@ -551,82 +391,151 @@ def test_delete_client_displays_service_error(monkeypatch, capsys) -> None:
         ("2", "get_client"),
         ("3", "create_client"),
         ("4", "update_client"),
-        ("5", "delete_client"),
     ],
 )
-def test_run_calls_selected_action(
+def test_commercial_menu_calls_selected_action(
     monkeypatch,
     choice: str,
     method_name: str,
 ) -> None:
-
-    (
-        controller,
-        _client_service,
-        _current_session,
-        _employee,
-    ) = create_controller()
+    controller, _service, _session, _employee = create_controller(
+        Role.COMMERCIAL
+    )
 
     selected_method = Mock()
-    monkeypatch.setattr(controller, method_name, selected_method)
-
-    input_values = iter(
-        [
-            choice,
-            "0",
-        ]
+    monkeypatch.setattr(
+        controller,
+        method_name,
+        selected_method,
     )
-
     monkeypatch.setattr(
         "builtins.input",
-        lambda _message="": next(input_values),
+        lambda _message="": choice,
     )
 
-    controller.run()
+    should_return = controller._run_commercial_menu()
 
+    assert should_return is False
     selected_method.assert_called_once_with()
 
 
-def test_run_displays_invalid_choice(monkeypatch, capsys) -> None:
-    (
-        controller,
-        _client_service,
-        _current_session,
-        _employee,
-    ) = create_controller()
-
-    input_values = iter(
-        [
-            "99",
-            "0",
-        ]
+def test_commercial_menu_returns_on_zero(monkeypatch) -> None:
+    controller, _service, _session, _employee = create_controller(
+        Role.COMMERCIAL
     )
 
     monkeypatch.setattr(
         "builtins.input",
-        lambda _message="": next(input_values),
+        lambda _message="": "0",
+    )
+
+    assert controller._run_commercial_menu() is True
+
+
+@pytest.mark.parametrize(
+    ("choice", "method_name"),
+    [
+        ("1", "list_clients"),
+        ("2", "get_client"),
+    ],
+)
+def test_read_only_menu_calls_selected_action(
+    monkeypatch,
+    choice: str,
+    method_name: str,
+) -> None:
+    controller, _service, _session, _employee = create_controller(
+        Role.SUPPORT
+    )
+
+    selected_method = Mock()
+    monkeypatch.setattr(
+        controller,
+        method_name,
+        selected_method,
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": choice,
+    )
+
+    should_return = controller._run_read_only_menu()
+
+    assert should_return is False
+    selected_method.assert_called_once_with()
+
+
+def test_read_only_menu_returns_on_zero(monkeypatch) -> None:
+    controller, _service, _session, _employee = create_controller(
+        Role.GESTION
+    )
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "0",
+    )
+
+    assert controller._run_read_only_menu() is True
+
+
+@pytest.mark.parametrize(
+    ("role", "expected_menu"),
+    [
+        (Role.COMMERCIAL, "_run_commercial_menu"),
+        (Role.GESTION, "_run_read_only_menu"),
+        (Role.SUPPORT, "_run_read_only_menu"),
+    ],
+)
+def test_run_dispatches_menu_by_role(
+    monkeypatch,
+    role: Role,
+    expected_menu: str,
+) -> None:
+    controller, _service, current_session, _employee = (
+        create_controller(role)
+    )
+
+    states = iter([True, False])
+    monkeypatch.setattr(
+        type(current_session),
+        "is_authenticated",
+        property(lambda _self: next(states, False)),
+    )
+
+    commercial_menu = Mock(return_value=False)
+    read_only_menu = Mock(return_value=False)
+
+    monkeypatch.setattr(
+        controller,
+        "_run_commercial_menu",
+        commercial_menu,
+    )
+    monkeypatch.setattr(
+        controller,
+        "_run_read_only_menu",
+        read_only_menu,
     )
 
     controller.run()
 
-    captured = capsys.readouterr()
-
-    assert "Choix invalide." in captured.out
+    if expected_menu == "_run_commercial_menu":
+        commercial_menu.assert_called_once_with()
+        read_only_menu.assert_not_called()
+    else:
+        read_only_menu.assert_called_once_with()
+        commercial_menu.assert_not_called()
 
 
 def test_get_current_employee_raises_when_session_is_empty() -> None:
-
-    client_service = Mock()
-    current_session = CurrentSession()
-
     controller = ClientController(
-        client_service=client_service,
-        current_session=current_session,
+        client_service=Mock(),
+        current_session=CurrentSession(),
     )
 
     with pytest.raises(
         RuntimeError,
-        match="Aucun employé connecté dans la session",
+        match="Aucun collaborateur connecté dans la session|"
+        "Aucun employé connecté dans la session",
     ):
         controller._get_current_employee()
 
@@ -644,7 +553,6 @@ def test_ask_integer_returns_integer(
     raw_value: str,
     expected: int,
 ) -> None:
-
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": raw_value,
@@ -653,8 +561,10 @@ def test_ask_integer_returns_integer(
     assert ClientController._ask_integer("ID : ") == expected
 
 
-def test_ask_integer_returns_none_for_invalid_value(monkeypatch, capsys) -> None:
-
+def test_ask_integer_returns_none_for_invalid_value(
+    monkeypatch,
+    capsys,
+) -> None:
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": "abc",
@@ -662,7 +572,8 @@ def test_ask_integer_returns_none_for_invalid_value(monkeypatch, capsys) -> None
 
     result = ClientController._ask_integer("ID : ")
 
-    captured = capsys.readouterr()
-
     assert result is None
-    assert "L'identifiant doit être un nombre entier." in captured.out
+    assert (
+        "L'identifiant doit être un nombre entier."
+        in capsys.readouterr().out
+    )

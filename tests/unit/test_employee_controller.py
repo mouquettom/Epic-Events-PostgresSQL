@@ -13,7 +13,7 @@ from app.utils.exceptions import (
 
 
 def create_current_session() -> tuple[CurrentSession, Employee]:
-    """Crée une session applicative contenant un gestionnaire connecté."""
+    """Crée une session contenant un gestionnaire connecté."""
     manager = Mock(spec=Employee)
     manager.id = 1
     manager.first_name = "Admin"
@@ -45,131 +45,176 @@ def create_controller() -> tuple[
         current_session=current_session,
     )
 
-    return controller, employee_service, current_session, manager
+    return (
+        controller,
+        employee_service,
+        current_session,
+        manager,
+    )
+
+
+def create_employee_mock(
+    *,
+    employee_id: int = 2,
+    first_name: str = "Alice",
+    last_name: str = "Martin",
+    email: str = "alice@test.com",
+    role: Role = Role.COMMERCIAL,
+) -> Employee:
+    """Crée un faux collaborateur réutilisable."""
+    employee = Mock(spec=Employee)
+    employee.id = employee_id
+    employee.first_name = first_name
+    employee.last_name = last_name
+    employee.email = email
+    employee.role = role
+    return employee
+
+
+# ---------------------------------------------------------------------------
+# Consultation
+# ---------------------------------------------------------------------------
 
 
 def test_list_employees_displays_employees(capsys) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
-
-    employee = Mock(spec=Employee)
-    employee.id = 2
-    employee.first_name = "Alice"
-    employee.last_name = "Martin"
-    employee.email = "alice@test.com"
-    employee.role = Role.COMMERCIAL
-
-    employee_service.list_employees.return_value = [employee]
+    controller, service, _session, manager = create_controller()
+    employee = create_employee_mock()
+    service.list_employees.return_value = [employee]
 
     controller.list_employees()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Liste des employés" in captured.out
-    assert "Alice Martin" in captured.out
-    assert "alice@test.com" in captured.out
-    assert "COMMERCIAL" in captured.out
-    employee_service.list_employees.assert_called_once_with(manager)
+    assert "Liste des collaborateurs" in output
+    assert "Alice Martin" in output
+    assert "alice@test.com" in output
+    assert "COMMERCIAL" in output
+    service.list_employees.assert_called_once_with(manager)
 
 
 def test_list_employees_displays_empty_message(capsys) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
-
-    employee_service.list_employees.return_value = []
+    controller, service, _session, manager = create_controller()
+    service.list_employees.return_value = []
 
     controller.list_employees()
 
-    captured = capsys.readouterr()
-
-    assert "Aucun employé trouvé" in captured.out
-    employee_service.list_employees.assert_called_once_with(manager)
+    assert "Aucun collaborateur trouvé" in capsys.readouterr().out
+    service.list_employees.assert_called_once_with(manager)
 
 
 def test_list_employees_displays_service_error(capsys) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
-
-    employee_service.list_employees.side_effect = AuthorizationError("Accès interdit.")
+    controller, service, _session, manager = create_controller()
+    service.list_employees.side_effect = AuthorizationError(
+        "Accès interdit."
+    )
 
     controller.list_employees()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Accès interdit." in captured.out
-    employee_service.list_employees.assert_called_once_with(manager)
+    assert "Erreur : Accès interdit." in capsys.readouterr().out
+    service.list_employees.assert_called_once_with(manager)
 
 
 def test_get_employee_displays_employee(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
+    controller, service, _session, manager = create_controller()
+    employee = create_employee_mock(role=Role.SUPPORT)
+    service.get_employee.return_value = employee
 
-    employee = Mock(spec=Employee)
-    employee.id = 2
-    employee.first_name = "Alice"
-    employee.last_name = "Martin"
-    employee.email = "alice@test.com"
-    employee.role = Role.SUPPORT
-
-    employee_service.get_employee.return_value = employee
-
-    monkeypatch.setattr("builtins.input", lambda _message="": "2")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "2",
+    )
 
     controller.get_employee()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Employé" in captured.out
-    assert "Alice" in captured.out
-    assert "Martin" in captured.out
-    assert "alice@test.com" in captured.out
-    assert "SUPPORT" in captured.out
-    employee_service.get_employee.assert_called_once_with(
+    assert "=== Collaborateur ===" in output
+    assert "ID : 2" in output
+    assert "Prénom : Alice" in output
+    assert "Nom : Martin" in output
+    assert "Email : alice@test.com" in output
+    assert "Rôle : SUPPORT" in output
+
+    service.get_employee.assert_called_once_with(
         current_employee=manager,
         employee_id=2,
     )
 
 
-def test_get_employee_rejects_invalid_identifier(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, _manager = create_controller()
+def test_get_employee_rejects_invalid_identifier(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, _manager = create_controller()
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "abc")
-
-    controller.get_employee()
-
-    captured = capsys.readouterr()
-
-    assert "doit être un nombre entier" in captured.out
-    employee_service.get_employee.assert_not_called()
-
-
-def test_get_employee_displays_not_found_error(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
-
-    employee_service.get_employee.side_effect = NotFoundError("Employé introuvable.")
-
-    monkeypatch.setattr("builtins.input", lambda _message="": "999")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
 
     controller.get_employee()
 
-    captured = capsys.readouterr()
+    assert (
+        "L'identifiant doit être un nombre entier."
+        in capsys.readouterr().out
+    )
+    service.get_employee.assert_not_called()
 
-    assert "Erreur : Employé introuvable." in captured.out
-    employee_service.get_employee.assert_called_once_with(
+
+def test_get_employee_displays_not_found_error(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, manager = create_controller()
+    service.get_employee.side_effect = NotFoundError(
+        "Collaborateur introuvable."
+    )
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "999",
+    )
+
+    controller.get_employee()
+
+    assert "Erreur : Collaborateur introuvable." in capsys.readouterr().out
+    service.get_employee.assert_called_once_with(
         current_employee=manager,
         employee_id=999,
     )
 
 
-def test_create_employee_calls_service(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
+# ---------------------------------------------------------------------------
+# Création
+# ---------------------------------------------------------------------------
 
-    created_employee = Mock(spec=Employee)
-    created_employee.id = 2
-    created_employee.first_name = "Alice"
-    created_employee.last_name = "Martin"
-    created_employee.role = Role.COMMERCIAL
 
-    employee_service.create_employee.return_value = created_employee
+def test_create_employee_calls_service(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, manager = create_controller()
 
-    input_values = iter(["Alice", "Martin", "alice@test.com", "1"])
-    password_values = iter(["Password123!", "Password123!"])
+    created_employee = create_employee_mock(
+        employee_id=2,
+        role=Role.COMMERCIAL,
+    )
+    service.create_employee.return_value = created_employee
+
+    input_values = iter(
+        [
+            "Alice",
+            "Martin",
+            "alice@test.com",
+            "1",
+        ]
+    )
+    password_values = iter(
+        [
+            "Password123!",
+            "Password123!",
+        ]
+    )
 
     monkeypatch.setattr(
         "builtins.input",
@@ -182,12 +227,13 @@ def test_create_employee_calls_service(monkeypatch, capsys) -> None:
 
     controller.create_employee()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "Employé créé avec succès" in captured.out
-    assert "Alice Martin" in captured.out
-    assert "COMMERCIAL" in captured.out
-    employee_service.create_employee.assert_called_once_with(
+    assert "Collaborateur créé avec succès" in output
+    assert "Alice Martin" in output
+    assert "COMMERCIAL" in output
+
+    service.create_employee.assert_called_once_with(
         current_employee=manager,
         first_name="Alice",
         last_name="Martin",
@@ -197,11 +243,26 @@ def test_create_employee_calls_service(monkeypatch, capsys) -> None:
     )
 
 
-def test_create_employee_rejects_password_mismatch(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, _manager = create_controller()
+def test_create_employee_rejects_password_mismatch(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, _manager = create_controller()
 
-    input_values = iter(["Alice", "Martin", "alice@test.com", "1"])
-    password_values = iter(["Password123!", "DifferentPassword123!"])
+    input_values = iter(
+        [
+            "Alice",
+            "Martin",
+            "alice@test.com",
+            "1",
+        ]
+    )
+    password_values = iter(
+        [
+            "Password123!",
+            "DifferentPassword123!",
+        ]
+    )
 
     monkeypatch.setattr(
         "builtins.input",
@@ -214,16 +275,27 @@ def test_create_employee_rejects_password_mismatch(monkeypatch, capsys) -> None:
 
     controller.create_employee()
 
-    captured = capsys.readouterr()
+    output = capsys.readouterr().out
 
-    assert "les mots de passe ne correspondent pas" in captured.out
-    employee_service.create_employee.assert_not_called()
+    assert "les mots de passe ne correspondent pas" in output
+    service.create_employee.assert_not_called()
 
 
-def test_create_employee_rejects_invalid_role(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, _manager = create_controller()
+def test_create_employee_rejects_invalid_role(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, _manager = create_controller()
 
-    input_values = iter(["Alice", "Martin", "alice@test.com", "99"])
+    input_values = iter(
+        [
+            "Alice",
+            "Martin",
+            "alice@test.com",
+            "99",
+        ]
+    )
+
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
@@ -231,21 +303,34 @@ def test_create_employee_rejects_invalid_role(monkeypatch, capsys) -> None:
 
     controller.create_employee()
 
-    captured = capsys.readouterr()
-
-    assert "Rôle invalide" in captured.out
-    employee_service.create_employee.assert_not_called()
+    assert "Rôle invalide." in capsys.readouterr().out
+    service.create_employee.assert_not_called()
 
 
-def test_create_employee_displays_duplicate_error(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
+def test_create_employee_displays_duplicate_error(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, manager = create_controller()
 
-    employee_service.create_employee.side_effect = DuplicateError(
-        "Cet email est déjà utilisé."
+    service.create_employee.side_effect = DuplicateError(
+        "Un collaborateur utilise déjà cette adresse email."
     )
 
-    input_values = iter(["Alice", "Martin", "alice@test.com", "3"])
-    password_values = iter(["Password123!", "Password123!"])
+    input_values = iter(
+        [
+            "Alice",
+            "Martin",
+            "alice@test.com",
+            "3",
+        ]
+    )
+    password_values = iter(
+        [
+            "Password123!",
+            "Password123!",
+        ]
+    )
 
     monkeypatch.setattr(
         "builtins.input",
@@ -258,10 +343,11 @@ def test_create_employee_displays_duplicate_error(monkeypatch, capsys) -> None:
 
     controller.create_employee()
 
-    captured = capsys.readouterr()
-
-    assert "Erreur : Cet email est déjà utilisé." in captured.out
-    employee_service.create_employee.assert_called_once_with(
+    assert (
+        "Erreur : Un collaborateur utilise déjà cette adresse email."
+        in capsys.readouterr().out
+    )
+    service.create_employee.assert_called_once_with(
         current_employee=manager,
         first_name="Alice",
         last_name="Martin",
@@ -271,14 +357,34 @@ def test_create_employee_displays_duplicate_error(monkeypatch, capsys) -> None:
     )
 
 
-def test_update_employee_calls_service(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
+# ---------------------------------------------------------------------------
+# Modification
+# ---------------------------------------------------------------------------
 
-    updated_employee = Mock(spec=Employee)
-    updated_employee.id = 2
-    employee_service.update_employee.return_value = updated_employee
 
-    input_values = iter(["2", "Alice", "Martin", "alice.new@test.com", "o", "3"])
+def test_update_employee_calls_service(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, manager = create_controller()
+
+    updated_employee = create_employee_mock(
+        employee_id=2,
+        role=Role.SUPPORT,
+    )
+    service.update_employee.return_value = updated_employee
+
+    input_values = iter(
+        [
+            "2",
+            "Alice",
+            "Martin",
+            "alice.new@test.com",
+            "o",
+            "3",
+        ]
+    )
+
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
@@ -286,10 +392,12 @@ def test_update_employee_calls_service(monkeypatch, capsys) -> None:
 
     controller.update_employee()
 
-    captured = capsys.readouterr()
+    assert (
+        "Collaborateur 2 mis à jour avec succès."
+        in capsys.readouterr().out
+    )
 
-    assert "Employé 2 mis à jour avec succès" in captured.out
-    employee_service.update_employee.assert_called_once_with(
+    service.update_employee.assert_called_once_with(
         current_employee=manager,
         employee_id=2,
         first_name="Alice",
@@ -299,14 +407,24 @@ def test_update_employee_calls_service(monkeypatch, capsys) -> None:
     )
 
 
-def test_update_employee_passes_none_for_empty_fields(monkeypatch) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
+def test_update_employee_passes_none_for_empty_fields(
+    monkeypatch,
+) -> None:
+    controller, service, _session, manager = create_controller()
 
-    updated_employee = Mock(spec=Employee)
-    updated_employee.id = 2
-    employee_service.update_employee.return_value = updated_employee
+    updated_employee = create_employee_mock(employee_id=2)
+    service.update_employee.return_value = updated_employee
 
-    input_values = iter(["2", "", "", "", "n"])
+    input_values = iter(
+        [
+            "2",
+            "",
+            "",
+            "",
+            "n",
+        ]
+    )
+
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
@@ -314,7 +432,7 @@ def test_update_employee_passes_none_for_empty_fields(monkeypatch) -> None:
 
     controller.update_employee()
 
-    employee_service.update_employee.assert_called_once_with(
+    service.update_employee.assert_called_once_with(
         current_employee=manager,
         employee_id=2,
         first_name=None,
@@ -324,23 +442,43 @@ def test_update_employee_passes_none_for_empty_fields(monkeypatch) -> None:
     )
 
 
-def test_update_employee_rejects_invalid_identifier(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, _manager = create_controller()
+def test_update_employee_rejects_invalid_identifier(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, _manager = create_controller()
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "invalid")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "invalid",
+    )
 
     controller.update_employee()
 
-    captured = capsys.readouterr()
+    assert (
+        "L'identifiant doit être un nombre entier."
+        in capsys.readouterr().out
+    )
+    service.update_employee.assert_not_called()
 
-    assert "doit être un nombre entier" in captured.out
-    employee_service.update_employee.assert_not_called()
 
+def test_update_employee_stops_when_new_role_is_invalid(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, _manager = create_controller()
 
-def test_update_employee_stops_when_new_role_is_invalid(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, _manager = create_controller()
+    input_values = iter(
+        [
+            "2",
+            "",
+            "",
+            "",
+            "o",
+            "99",
+        ]
+    )
 
-    input_values = iter(["2", "", "", "", "o", "99"])
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
@@ -348,14 +486,20 @@ def test_update_employee_stops_when_new_role_is_invalid(monkeypatch, capsys) -> 
 
     controller.update_employee()
 
-    captured = capsys.readouterr()
-
-    assert "Rôle invalide" in captured.out
-    employee_service.update_employee.assert_not_called()
+    assert "Rôle invalide." in capsys.readouterr().out
+    service.update_employee.assert_not_called()
 
 
-def test_delete_employee_calls_service_when_confirmed(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, manager = create_controller()
+# ---------------------------------------------------------------------------
+# Suppression
+# ---------------------------------------------------------------------------
+
+
+def test_delete_employee_calls_service_when_confirmed(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, manager = create_controller()
 
     input_values = iter(["2", "o"])
     monkeypatch.setattr(
@@ -365,19 +509,21 @@ def test_delete_employee_calls_service_when_confirmed(monkeypatch, capsys) -> No
 
     controller.delete_employee()
 
-    captured = capsys.readouterr()
-
-    assert "Employé supprimé avec succès" in captured.out
-    employee_service.delete_employee.assert_called_once_with(
+    assert (
+        "Collaborateur supprimé avec succès."
+        in capsys.readouterr().out
+    )
+    service.delete_employee.assert_called_once_with(
         current_employee=manager,
         employee_id=2,
     )
 
 
 def test_delete_employee_does_not_call_service_when_cancelled(
-    monkeypatch, capsys
+    monkeypatch,
+    capsys,
 ) -> None:
-    controller, employee_service, _current_session, _manager = create_controller()
+    controller, service, _session, _manager = create_controller()
 
     input_values = iter(["2", "n"])
     monkeypatch.setattr(
@@ -387,63 +533,219 @@ def test_delete_employee_does_not_call_service_when_cancelled(
 
     controller.delete_employee()
 
-    captured = capsys.readouterr()
-
-    assert "Suppression annulée" in captured.out
-    employee_service.delete_employee.assert_not_called()
+    assert "Suppression annulée." in capsys.readouterr().out
+    service.delete_employee.assert_not_called()
 
 
-def test_delete_employee_rejects_invalid_identifier(monkeypatch, capsys) -> None:
-    controller, employee_service, _current_session, _manager = create_controller()
+def test_delete_employee_rejects_invalid_identifier(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, _manager = create_controller()
 
-    monkeypatch.setattr("builtins.input", lambda _message="": "invalid")
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "invalid",
+    )
 
     controller.delete_employee()
 
-    captured = capsys.readouterr()
+    assert (
+        "L'identifiant doit être un nombre entier."
+        in capsys.readouterr().out
+    )
+    service.delete_employee.assert_not_called()
 
-    assert "doit être un nombre entier" in captured.out
-    employee_service.delete_employee.assert_not_called()
 
+def test_delete_employee_displays_service_error(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, service, _session, manager = create_controller()
 
-def test_run_calls_selected_action_and_returns(monkeypatch) -> None:
-    controller, _employee_service, _current_session, _manager = create_controller()
+    service.delete_employee.side_effect = AuthorizationError(
+        "Suppression interdite."
+    )
 
-    controller.list_employees = Mock()
-    input_values = iter(["1", "0"])
+    input_values = iter(["2", "o"])
     monkeypatch.setattr(
         "builtins.input",
         lambda _message="": next(input_values),
     )
 
-    controller.run()
+    controller.delete_employee()
 
-    controller.list_employees.assert_called_once()
+    assert (
+        "Erreur : Suppression interdite."
+        in capsys.readouterr().out
+    )
+    service.delete_employee.assert_called_once_with(
+        current_employee=manager,
+        employee_id=2,
+    )
 
 
-def test_run_displays_invalid_choice(monkeypatch, capsys) -> None:
-    controller, _employee_service, _current_session, _manager = create_controller()
+# ---------------------------------------------------------------------------
+# Menu et helpers
+# ---------------------------------------------------------------------------
 
-    input_values = iter(["99", "0"])
+
+@pytest.mark.parametrize(
+    ("choice", "method_name"),
+    [
+        ("1", "list_employees"),
+        ("2", "get_employee"),
+        ("3", "create_employee"),
+        ("4", "update_employee"),
+        ("5", "delete_employee"),
+    ],
+)
+def test_run_calls_selected_action(
+    monkeypatch,
+    choice,
+    method_name,
+) -> None:
+    controller, _service, current_session, _manager = create_controller()
+
+    selected_method = Mock()
+    monkeypatch.setattr(
+        controller,
+        method_name,
+        selected_method,
+    )
+
+    states = iter([True, False])
+    monkeypatch.setattr(
+        type(current_session),
+        "is_authenticated",
+        property(lambda _self: next(states, False)),
+    )
     monkeypatch.setattr(
         "builtins.input",
-        lambda _message="": next(input_values),
+        lambda _message="": choice,
     )
 
     controller.run()
 
-    captured = capsys.readouterr()
+    selected_method.assert_called_once_with()
 
-    assert "Choix invalide" in captured.out
+
+def test_run_returns_on_zero(monkeypatch) -> None:
+    controller, _service, _session, _manager = create_controller()
+
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "0",
+    )
+
+    assert controller.run() is None
+
+
+def test_run_displays_invalid_choice(
+    monkeypatch,
+    capsys,
+) -> None:
+    controller, _service, current_session, _manager = create_controller()
+
+    states = iter([True, False])
+    monkeypatch.setattr(
+        type(current_session),
+        "is_authenticated",
+        property(lambda _self: next(states, False)),
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "99",
+    )
+
+    controller.run()
+
+    assert "Choix invalide." in capsys.readouterr().out
 
 
 def test_get_current_employee_raises_when_session_is_empty() -> None:
-    employee_service = Mock()
-    current_session = CurrentSession()
     controller = EmployeeController(
-        employee_service=employee_service,
-        current_session=current_session,
+        employee_service=Mock(),
+        current_session=CurrentSession(),
     )
 
-    with pytest.raises(RuntimeError, match="Aucun employé connecté"):
+    with pytest.raises(
+        RuntimeError,
+        match="Aucun collaborateur connecté dans la session",
+    ):
         controller._get_current_employee()
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("1", 1),
+        (" 42 ", 42),
+        ("-3", -3),
+    ],
+)
+def test_ask_integer_returns_integer(
+    monkeypatch,
+    raw_value,
+    expected,
+) -> None:
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": raw_value,
+    )
+
+    assert EmployeeController._ask_integer("ID : ") == expected
+
+
+def test_ask_integer_returns_none_for_invalid_value(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "abc",
+    )
+
+    result = EmployeeController._ask_integer("ID : ")
+
+    assert result is None
+    assert (
+        "L'identifiant doit être un nombre entier."
+        in capsys.readouterr().out
+    )
+
+
+@pytest.mark.parametrize(
+    ("choice", "expected"),
+    [
+        ("1", Role.COMMERCIAL),
+        ("2", Role.GESTION),
+        ("3", Role.SUPPORT),
+    ],
+)
+def test_ask_role_returns_expected_role(
+    monkeypatch,
+    choice,
+    expected,
+) -> None:
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": choice,
+    )
+
+    assert EmployeeController._ask_role() == expected
+
+
+def test_ask_role_returns_none_for_invalid_choice(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _message="": "99",
+    )
+
+    result = EmployeeController._ask_role()
+
+    assert result is None
+    assert "Rôle invalide." in capsys.readouterr().out

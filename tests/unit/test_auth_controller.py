@@ -14,7 +14,7 @@ def make_employee(
     last_name: str = "Martin",
     role: Role = Role.GESTION,
 ):
-    """ Crée un employé minimal pour les tests du contrôleur. """
+    """Crée un employé minimal pour les tests du contrôleur."""
     return SimpleNamespace(
         id=1,
         first_name=first_name,
@@ -81,14 +81,16 @@ def test_login_authenticates_employee_and_opens_session(
         email="alice@example.com",
         password="secret-password",
     )
-    controller.auth_service.get_current_employee.assert_called_once_with("access-token")
+    controller.auth_service.get_current_employee.assert_called_once_with(
+        "access-token"
+    )
     current_session.login.assert_called_once_with(
         employee=employee,
         access_token="access-token",
     )
 
     output = capsys.readouterr().out
-    assert "Connexion à Epic Events Database" in output
+    assert "Connexion à Epic Events" in output
     assert "Connexion réussie" in output
     assert "Bienvenue Alice Martin" in output
     assert "Rôle : GESTION" in output
@@ -178,8 +180,8 @@ def test_login_returns_false_when_token_employee_lookup_fails(
     capsys,
 ) -> None:
     controller.auth_service.authenticate.return_value = "invalid-token"
-    controller.auth_service.get_current_employee.side_effect = AuthorizationError(
-        "Token invalide."
+    controller.auth_service.get_current_employee.side_effect = (
+        AuthorizationError("Token invalide.")
     )
 
     result = controller.login()
@@ -247,7 +249,9 @@ def test_constructor_creates_auth_service_with_database_session(
     db_session,
     current_session,
 ) -> None:
-    with patch("app.controllers.auth_controller.AuthService") as auth_service_class:
+    with patch(
+        "app.controllers.auth_controller.AuthService"
+    ) as auth_service_class:
         auth_service_instance = Mock()
         auth_service_class.return_value = auth_service_instance
 

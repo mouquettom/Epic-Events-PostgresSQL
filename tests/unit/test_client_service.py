@@ -18,7 +18,7 @@ def make_employee(
     employee_id: int = 1,
     role: Role = Role.COMMERCIAL,
 ):
-    """ Crée un employé minimal utilisable par ClientService. """
+    """Crée un collaborateur minimal utilisable par ClientService."""
     return SimpleNamespace(
         id=employee_id,
         first_name="Alice",
@@ -90,7 +90,9 @@ def test_create_client_creates_normalized_client(
     assert result.company == "Epic Corp"
     assert result.commercial_id == employee.id
 
-    service.repository.get_by_email.assert_called_once_with("jean@example.com")
+    service.repository.get_by_email.assert_called_once_with(
+        "jean@example.com"
+    )
     service.repository.create.assert_called_once_with(result)
     session.commit.assert_called_once_with()
     session.rollback.assert_not_called()
@@ -178,7 +180,9 @@ def test_create_client_rejects_duplicate_email(
             company="Epic Corp",
         )
 
-    service.repository.get_by_email.assert_called_once_with("jean@example.com")
+    service.repository.get_by_email.assert_called_once_with(
+        "jean@example.com"
+    )
     service.repository.create.assert_not_called()
     session.commit.assert_not_called()
 
@@ -189,7 +193,9 @@ def test_create_client_rolls_back_when_repository_fails(
 ) -> None:
     employee = make_employee()
     service.repository.get_by_email.return_value = None
-    service.repository.create.side_effect = RuntimeError("database failure")
+    service.repository.create.side_effect = RuntimeError(
+        "database failure"
+    )
 
     with pytest.raises(RuntimeError, match="database failure"):
         service.create_client(
@@ -213,18 +219,39 @@ def test_create_client_rolls_back_when_repository_fails(
     "role",
     [Role.COMMERCIAL, Role.GESTION, Role.SUPPORT],
 )
-def test_get_client_returns_accessible_client(
+def test_get_client_is_available_to_all_valid_roles(
     service,
     role,
 ) -> None:
     employee = make_employee(role=role)
-    client = make_client(commercial_id=employee.id)
+    client = make_client(commercial_id=999)
     service.repository.get_by_id.return_value = client
 
-    result = service.get_client(employee, client.id)
+    result = service.get_client(
+        current_employee=employee,
+        client_id=client.id,
+    )
 
     assert result is client
     service.repository.get_by_id.assert_called_once_with(client.id)
+
+
+def test_get_client_allows_commercial_to_view_another_commercial_client(
+    service,
+) -> None:
+    employee = make_employee(
+        employee_id=1,
+        role=Role.COMMERCIAL,
+    )
+    client = make_client(commercial_id=2)
+    service.repository.get_by_id.return_value = client
+
+    result = service.get_client(
+        current_employee=employee,
+        client_id=client.id,
+    )
+
+    assert result is client
 
 
 def test_get_client_rejects_unknown_client(service) -> None:
@@ -232,36 +259,30 @@ def test_get_client_rejects_unknown_client(service) -> None:
     service.repository.get_by_id.return_value = None
 
     with pytest.raises(NotFoundError, match="Client introuvable"):
-        service.get_client(employee, 999)
+        service.get_client(
+            current_employee=employee,
+            client_id=999,
+        )
 
     service.repository.get_by_id.assert_called_once_with(999)
 
 
-def test_get_client_rejects_commercial_access_to_another_owner(
+def test_get_client_rejects_unknown_role_before_repository_lookup(
     service,
 ) -> None:
-    employee = make_employee(employee_id=1)
-    client = make_client(commercial_id=2)
-    service.repository.get_by_id.return_value = client
-
-    with pytest.raises(
-        AuthorizationError,
-        match="Vous ne pouvez consulter que vos propres clients",
-    ):
-        service.get_client(employee, client.id)
-
-
-def test_get_client_rejects_unknown_role(service) -> None:
     employee = make_employee()
     employee.role = "UNKNOWN"
-    client = make_client()
-    service.repository.get_by_id.return_value = client
 
     with pytest.raises(
         AuthorizationError,
-        match="Vous n'êtes pas autorisé à consulter ce client",
+        match="Vous n'êtes pas autorisé à consulter les clients",
     ):
-        service.get_client(employee, client.id)
+        service.get_client(
+            current_employee=employee,
+            client_id=10,
+        )
+
+    service.repository.get_by_id.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -273,12 +294,15 @@ def test_get_client_rejects_unknown_role(service) -> None:
     "role",
     [Role.COMMERCIAL, Role.GESTION, Role.SUPPORT],
 )
-def test_list_clients_returns_repository_clients(
+def test_list_clients_returns_all_clients_for_valid_roles(
     service,
     role,
 ) -> None:
     employee = make_employee(role=role)
-    clients = [make_client(client_id=1), make_client(client_id=2)]
+    clients = [
+        make_client(client_id=1, commercial_id=1),
+        make_client(client_id=2, commercial_id=2),
+    ]
     service.repository.get_all.return_value = clients
 
     result = service.list_clients(employee)
@@ -331,7 +355,9 @@ def test_update_client_updates_all_fields_and_commits(
     assert client.company == "New Company"
 
     service.repository.get_by_id.assert_called_once_with(client.id)
-    service.repository.get_by_email.assert_called_once_with("jeanne@example.com")
+    service.repository.get_by_email.assert_called_once_with(
+        "jeanne@example.com"
+    )
     service.repository.update.assert_called_once_with(client)
     session.commit.assert_called_once_with()
     session.rollback.assert_not_called()
@@ -426,7 +452,7 @@ def test_update_client_rejects_non_commercial_employee(
     session.commit.assert_not_called()
 
 
-def test_update_client_rejects_another_commercial_client(
+def test_update_client_rejects_client_owned_by_another_commercial(
     service,
     session,
 ) -> None:
@@ -436,7 +462,8 @@ def test_update_client_rejects_another_commercial_client(
 
     with pytest.raises(
         AuthorizationError,
-        match="Vous ne pouvez modifier que vos propres clients",
+        match="Vous ne pouvez modifier que les clients "
+        "dont vous êtes responsable",
     ):
         service.update_client(
             current_employee=employee,
@@ -500,6 +527,7 @@ def test_update_client_rejects_email_used_by_another_client(
         commercial_id=employee.id,
         email="taken@example.com",
     )
+
     service.repository.get_by_id.return_value = client
     service.repository.get_by_email.return_value = other_client
 
@@ -513,7 +541,9 @@ def test_update_client_rejects_email_used_by_another_client(
             email=" TAKEN@EXAMPLE.COM ",
         )
 
-    service.repository.get_by_email.assert_called_once_with("taken@example.com")
+    service.repository.get_by_email.assert_called_once_with(
+        "taken@example.com"
+    )
     service.repository.update.assert_not_called()
     session.commit.assert_not_called()
 
@@ -525,7 +555,9 @@ def test_update_client_rolls_back_when_repository_fails(
     employee = make_employee()
     client = make_client(commercial_id=employee.id)
     service.repository.get_by_id.return_value = client
-    service.repository.update.side_effect = RuntimeError("update failure")
+    service.repository.update.side_effect = RuntimeError(
+        "update failure"
+    )
 
     with pytest.raises(RuntimeError, match="update failure"):
         service.update_client(
@@ -533,97 +565,6 @@ def test_update_client_rolls_back_when_repository_fails(
             client_id=client.id,
             full_name="New Name",
         )
-
-    session.commit.assert_not_called()
-    session.rollback.assert_called_once_with()
-
-
-# ---------------------------------------------------------------------------
-# delete_client
-# ---------------------------------------------------------------------------
-
-
-def test_delete_client_deletes_owned_client_and_commits(
-    service,
-    session,
-) -> None:
-    employee = make_employee()
-    client = make_client(commercial_id=employee.id)
-    service.repository.get_by_id.return_value = client
-
-    result = service.delete_client(employee, client.id)
-
-    assert result is None
-    service.repository.delete.assert_called_once_with(client)
-    session.commit.assert_called_once_with()
-    session.rollback.assert_not_called()
-
-
-def test_delete_client_rejects_unknown_client(
-    service,
-    session,
-) -> None:
-    service.repository.get_by_id.return_value = None
-
-    with pytest.raises(NotFoundError, match="Client introuvable"):
-        service.delete_client(make_employee(), 999)
-
-    service.repository.delete.assert_not_called()
-    session.commit.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "role",
-    [Role.GESTION, Role.SUPPORT],
-)
-def test_delete_client_rejects_non_commercial_employee(
-    service,
-    session,
-    role,
-) -> None:
-    employee = make_employee(role=role)
-    client = make_client(commercial_id=employee.id)
-    service.repository.get_by_id.return_value = client
-
-    with pytest.raises(
-        AuthorizationError,
-        match="Seul un commercial peut modifier un client",
-    ):
-        service.delete_client(employee, client.id)
-
-    service.repository.delete.assert_not_called()
-    session.commit.assert_not_called()
-
-
-def test_delete_client_rejects_another_commercial_client(
-    service,
-    session,
-) -> None:
-    employee = make_employee(employee_id=1)
-    client = make_client(commercial_id=2)
-    service.repository.get_by_id.return_value = client
-
-    with pytest.raises(
-        AuthorizationError,
-        match="Vous ne pouvez modifier que vos propres clients",
-    ):
-        service.delete_client(employee, client.id)
-
-    service.repository.delete.assert_not_called()
-    session.commit.assert_not_called()
-
-
-def test_delete_client_rolls_back_when_repository_fails(
-    service,
-    session,
-) -> None:
-    employee = make_employee()
-    client = make_client(commercial_id=employee.id)
-    service.repository.get_by_id.return_value = client
-    service.repository.delete.side_effect = RuntimeError("delete failure")
-
-    with pytest.raises(RuntimeError, match="delete failure"):
-        service.delete_client(employee, client.id)
 
     session.commit.assert_not_called()
     session.rollback.assert_called_once_with()
@@ -641,6 +582,7 @@ def test_get_existing_client_returns_client(service) -> None:
     result = service._get_existing_client(client.id)
 
     assert result is client
+    service.repository.get_by_id.assert_called_once_with(client.id)
 
 
 def test_get_existing_client_raises_not_found(service) -> None:
@@ -663,15 +605,24 @@ def test_require_commercial_role_accepts_commercial() -> None:
 def test_require_commercial_role_rejects_other_roles(role) -> None:
     employee = make_employee(role=role)
 
-    with pytest.raises(AuthorizationError):
+    with pytest.raises(
+        AuthorizationError,
+        match="Seul un commercial peut créer un client",
+    ):
         ClientService._require_commercial_role(employee)
 
 
 def test_require_client_owner_accepts_owner() -> None:
-    employee = make_employee(employee_id=1)
+    employee = make_employee(
+        employee_id=1,
+        role=Role.COMMERCIAL,
+    )
     client = make_client(commercial_id=1)
 
-    assert ClientService._require_client_owner(employee, client) is None
+    assert ClientService._require_client_owner(
+        employee,
+        client,
+    ) is None
 
 
 def test_require_client_owner_rejects_non_commercial() -> None:
@@ -682,58 +633,46 @@ def test_require_client_owner_rejects_non_commercial() -> None:
         AuthorizationError,
         match="Seul un commercial peut modifier un client",
     ):
-        ClientService._require_client_owner(employee, client)
+        ClientService._require_client_owner(
+            employee,
+            client,
+        )
 
 
 def test_require_client_owner_rejects_wrong_owner() -> None:
-    employee = make_employee(employee_id=1)
+    employee = make_employee(
+        employee_id=1,
+        role=Role.COMMERCIAL,
+    )
     client = make_client(commercial_id=2)
 
     with pytest.raises(
         AuthorizationError,
-        match="Vous ne pouvez modifier que vos propres clients",
+        match="Vous ne pouvez modifier que les clients "
+        "dont vous êtes responsable",
     ):
-        ClientService._require_client_owner(employee, client)
-
-
-def test_require_client_access_accepts_owner_commercial() -> None:
-    employee = make_employee(employee_id=1)
-    client = make_client(commercial_id=1)
-
-    assert ClientService._require_client_access(employee, client) is None
-
-
-def test_require_client_access_rejects_wrong_commercial() -> None:
-    employee = make_employee(employee_id=1)
-    client = make_client(commercial_id=2)
-
-    with pytest.raises(
-        AuthorizationError,
-        match="Vous ne pouvez consulter que vos propres clients",
-    ):
-        ClientService._require_client_access(employee, client)
+        ClientService._require_client_owner(
+            employee,
+            client,
+        )
 
 
 @pytest.mark.parametrize(
     "role",
-    [Role.GESTION, Role.SUPPORT],
+    [Role.GESTION, Role.COMMERCIAL, Role.SUPPORT],
 )
-def test_require_client_access_accepts_management_and_support(
-    role,
-) -> None:
+def test_require_valid_role_accepts_application_roles(role) -> None:
     employee = make_employee(role=role)
-    client = make_client(commercial_id=999)
 
-    assert ClientService._require_client_access(employee, client) is None
+    assert ClientService._require_valid_role(employee) is None
 
 
-def test_require_client_access_rejects_unknown_role() -> None:
+def test_require_valid_role_rejects_unknown_role() -> None:
     employee = make_employee()
     employee.role = "UNKNOWN"
-    client = make_client()
 
     with pytest.raises(
         AuthorizationError,
-        match="Vous n'êtes pas autorisé à consulter ce client",
+        match="Vous n'êtes pas autorisé à consulter les clients",
     ):
-        ClientService._require_client_access(employee, client)
+        ClientService._require_valid_role(employee)
