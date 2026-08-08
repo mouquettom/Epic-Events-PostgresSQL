@@ -277,7 +277,27 @@ L’application fonctionne également sans Sentry si `SENTRY_DSN` reste vide.
 
 ## Configuration de PostgreSQL
 
-Exemple de création de la base et de l’utilisateur :
+PostgreSQL doit être installé et le serveur doit être démarré avant de poursuivre.
+
+### Se connecter à PostgreSQL
+
+Depuis un terminal, se connecter avec un utilisateur PostgreSQL disposant des droits nécessaires pour créer une base et un utilisateur.
+
+Par exemple :
+
+```bash
+psql -d postgres
+```
+
+Selon la configuration locale, il peut être nécessaire de préciser l'utilisateur :
+
+```bash
+psql -U postgres -d postgres
+```
+
+### Créer la base de données et l'utilisateur
+
+Dans l'invite PostgreSQL :
 
 ```sql
 CREATE DATABASE epic_events;
@@ -290,14 +310,33 @@ ON DATABASE epic_events
 TO epic_user;
 ```
 
-Se connecter ensuite à la base et attribuer les droits nécessaires sur le schéma :
+Le mot de passe doit correspondre à la valeur de `DB_PASSWORD`
+définie dans le fichier `.env`.
+
+### Attribuer les droits sur le schéma
+
+Se connecter à la base nouvellement créée :
 
 ```sql
 \c epic_events
+```
+
+Puis autoriser `epic_user` à utiliser et créer des objets dans le
+schéma `public` :
+
+```sql
 GRANT USAGE, CREATE
 ON SCHEMA public
 TO epic_user;
 ```
+
+Quitter PostgreSQL :
+
+```text
+\q
+```
+
+La base est maintenant prête à recevoir les migrations Alembic.
 
 ---
 

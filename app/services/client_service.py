@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.models.client import Client
@@ -9,6 +11,9 @@ from app.utils.exceptions import (
     NotFoundError,
     ValidationError,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ClientService:
@@ -67,10 +72,23 @@ class ClientService:
             created_client = self.repository.create(client)
             self.session.commit()
 
+            logger.info(
+                "Client créé : client_id=%s, commercial_id=%s.",
+                created_client.id,
+                current_employee.id,
+            )
+
             return created_client
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de la création d'un client "
+                "par commercial_id=%s.",
+                current_employee.id,
+            )
+
             raise
 
     def get_client(
@@ -181,10 +199,24 @@ class ClientService:
             updated_client = self.repository.update(client)
             self.session.commit()
 
+            logger.info(
+                "Client modifié : client_id=%s, commercial_id=%s.",
+                updated_client.id,
+                current_employee.id,
+            )
+
             return updated_client
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de la modification du client_id=%s "
+                "par commercial_id=%s.",
+                client_id,
+                current_employee.id,
+            )
+
             raise
 
     def _get_existing_client(

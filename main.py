@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 
 import sentry_sdk
@@ -5,18 +6,22 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 
 from app.controllers.auth_controller import AuthController
-from app.controllers.main_menu_controller import MainMenuController
-from app.controllers.employee_controller import EmployeeController
 from app.controllers.client_controller import ClientController
 from app.controllers.contract_controller import ContractController
+from app.controllers.employee_controller import EmployeeController
 from app.controllers.event_controller import EventController
-from app.services.employee_service import EmployeeService
+from app.controllers.main_menu_controller import MainMenuController
+from app.database.session import SessionLocal
 from app.services.client_service import ClientService
 from app.services.contract_service import ContractService
+from app.services.employee_service import EmployeeService
 from app.services.event_service import EventService
-from app.database.session import SessionLocal
 from app.session.current_session import CurrentSession
+from app.utils.logging_config import configure_logging
 from app.utils.sentry import init_sentry
+
+
+logger = logging.getLogger(__name__)
 
 
 def run_application(
@@ -68,6 +73,8 @@ def run_application(
         event_controller=event_controller,
     )
 
+    logger.info("Démarrage de l'application Epic Events CRM.")
+
     try:
         while True:
             print("\n" + "=" * 45)
@@ -84,15 +91,26 @@ def run_application(
 
             elif choice == "0":
                 print("\nFermeture de l'application.")
+                logger.info(
+                    "Fermeture normale de l'application Epic Events CRM."
+                )
                 break
 
             else:
                 print("Choix invalide.")
 
     except KeyboardInterrupt:
+        logger.info(
+            "Arrêt manuel de l'application avec KeyboardInterrupt."
+        )
+
         print("\n\nFermeture de l'application.")
 
     except Exception as error:
+        logger.exception(
+            "Erreur technique inattendue dans l'application."
+        )
+
         sentry_sdk.capture_exception(error)
         sentry_sdk.flush(timeout=5.0)
 
@@ -104,8 +122,13 @@ def run_application(
     finally:
         db_session.close()
 
+        logger.info(
+            "Session de base de données fermée."
+        )
+
 
 if __name__ == "__main__":
     load_dotenv()
+    configure_logging()
     init_sentry()
     run_application()

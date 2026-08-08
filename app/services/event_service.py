@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -13,6 +14,9 @@ from app.utils.exceptions import (
     NotFoundError,
     ValidationError,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class EventService:
@@ -80,10 +84,26 @@ class EventService:
             created_event = self.event_repository.create(event)
             self.session.commit()
 
+            logger.info(
+                "Événement créé : event_id=%s, contract_id=%s, "
+                "commercial_id=%s.",
+                created_event.id,
+                contract.id,
+                current_employee.id,
+            )
+
             return created_event
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de la création d'un événement "
+                "pour contract_id=%s par commercial_id=%s.",
+                contract_id,
+                current_employee.id,
+            )
+
             raise
 
     def get_event(
@@ -109,7 +129,7 @@ class EventService:
         """
         Retourne tous les événements.
 
-        La consultation globale est autorisée aux équipes gestion,
+        La consultation est autorisée aux équipes gestion,
         commerciale et support.
         """
 
@@ -214,10 +234,24 @@ class EventService:
             updated_event = self.event_repository.update(event)
             self.session.commit()
 
+            logger.info(
+                "Événement modifié : event_id=%s, support_id=%s.",
+                updated_event.id,
+                current_employee.id,
+            )
+
             return updated_event
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de la modification "
+                "de event_id=%s par support_id=%s.",
+                event_id,
+                current_employee.id,
+            )
+
             raise
 
     def assign_support(
@@ -239,7 +273,7 @@ class EventService:
 
         if support.role != Role.SUPPORT:
             raise ValidationError(
-                "L'employé sélectionné n'appartient pas "
+                "Le collaborateur sélectionné n'appartient pas "
                 "au service support."
             )
 
@@ -249,10 +283,28 @@ class EventService:
             updated_event = self.event_repository.update(event)
             self.session.commit()
 
+            logger.info(
+                "Support affecté : event_id=%s, support_id=%s, "
+                "assigned_by_employee_id=%s.",
+                updated_event.id,
+                support.id,
+                current_employee.id,
+            )
+
             return updated_event
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de l'affectation "
+                "du support_id=%s à event_id=%s "
+                "par employee_id=%s.",
+                support_id,
+                event_id,
+                current_employee.id,
+            )
+
             raise
 
     def _get_existing_event(
@@ -262,7 +314,9 @@ class EventService:
         event = self.event_repository.get_by_id(event_id)
 
         if event is None:
-            raise NotFoundError("Événement introuvable.")
+            raise NotFoundError(
+                "Événement introuvable."
+            )
 
         return event
 
@@ -270,10 +324,14 @@ class EventService:
         self,
         contract_id: int,
     ) -> Contract:
-        contract = self.contract_repository.get_by_id(contract_id)
+        contract = self.contract_repository.get_by_id(
+            contract_id
+        )
 
         if contract is None:
-            raise NotFoundError("Contrat introuvable.")
+            raise NotFoundError(
+                "Contrat introuvable."
+            )
 
         return contract
 
@@ -281,10 +339,14 @@ class EventService:
         self,
         employee_id: int,
     ) -> Employee:
-        employee = self.employee_repository.get_by_id(employee_id)
+        employee = self.employee_repository.get_by_id(
+            employee_id
+        )
 
         if employee is None:
-            raise NotFoundError("Employé introuvable.")
+            raise NotFoundError(
+                "Collaborateur introuvable."
+            )
 
         return employee
 

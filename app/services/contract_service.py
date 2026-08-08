@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
@@ -12,6 +13,9 @@ from app.utils.exceptions import (
     NotFoundError,
     ValidationError,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ContractService:
@@ -35,7 +39,7 @@ class ContractService:
 
         Cette action est exclusivement réservée au service gestion.
         Le commercial associé au contrat est automatiquement celui
-        qui est déjà responsable du client.
+        qui est responsable du client.
         """
 
         self._require_management_role(current_employee)
@@ -46,6 +50,7 @@ class ContractService:
             total_amount,
             "Le montant total",
         )
+
         normalized_remaining = self._normalize_amount(
             remaining_amount,
             "Le montant restant",
@@ -68,12 +73,30 @@ class ContractService:
             created_contract = self.contract_repository.create(
                 contract
             )
+
             self.session.commit()
+
+            logger.info(
+                "Contrat créé : contract_id=%s, client_id=%s, "
+                "commercial_id=%s, created_by_employee_id=%s.",
+                created_contract.id,
+                client.id,
+                client.commercial_id,
+                current_employee.id,
+            )
 
             return created_contract
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de la création d'un contrat "
+                "pour client_id=%s par employee_id=%s.",
+                client_id,
+                current_employee.id,
+            )
+
             raise
 
     def get_contract(
@@ -99,8 +122,8 @@ class ContractService:
         """
         Retourne tous les contrats.
 
-        La lecture est autorisée aux équipes gestion, commerciale
-        et support.
+        La lecture est autorisée aux équipes gestion,
+        commerciale et support.
         """
 
         self._require_valid_role(current_employee)
@@ -119,7 +142,9 @@ class ContractService:
 
         self._require_commercial_role(current_employee)
 
-        contracts = self.contract_repository.get_unsigned_contracts()
+        contracts = (
+            self.contract_repository.get_unsigned_contracts()
+        )
 
         return [
             contract
@@ -140,7 +165,9 @@ class ContractService:
 
         self._require_commercial_role(current_employee)
 
-        contracts = self.contract_repository.get_unpaid_contracts()
+        contracts = (
+            self.contract_repository.get_unpaid_contracts()
+        )
 
         return [
             contract
@@ -198,25 +225,46 @@ class ContractService:
             contract.is_signed = is_signed
 
         try:
-            updated_contract = self.contract_repository.update(
-                contract
+            updated_contract = (
+                self.contract_repository.update(contract)
             )
+
             self.session.commit()
+
+            logger.info(
+                "Contrat modifié : contract_id=%s, employee_id=%s, "
+                "role=%s.",
+                updated_contract.id,
+                current_employee.id,
+                current_employee.role.value,
+            )
 
             return updated_contract
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de la modification "
+                "du contract_id=%s par employee_id=%s.",
+                contract_id,
+                current_employee.id,
+            )
+
             raise
 
     def _get_existing_contract(
         self,
         contract_id: int,
     ) -> Contract:
-        contract = self.contract_repository.get_by_id(contract_id)
+        contract = self.contract_repository.get_by_id(
+            contract_id
+        )
 
         if contract is None:
-            raise NotFoundError("Contrat introuvable.")
+            raise NotFoundError(
+                "Contrat introuvable."
+            )
 
         return contract
 
@@ -224,10 +272,14 @@ class ContractService:
         self,
         client_id: int,
     ) -> Client:
-        client = self.client_repository.get_by_id(client_id)
+        client = self.client_repository.get_by_id(
+            client_id
+        )
 
         if client is None:
-            raise NotFoundError("Client introuvable.")
+            raise NotFoundError(
+                "Client introuvable."
+            )
 
         return client
 
@@ -299,7 +351,9 @@ class ContractService:
                 f"{field_name} doit être un nombre valide."
             ) from error
 
-        return amount.quantize(Decimal("0.01"))
+        return amount.quantize(
+            Decimal("0.01")
+        )
 
     @staticmethod
     def _validate_amounts(

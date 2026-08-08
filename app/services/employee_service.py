@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.models.employee import Employee, Role
@@ -11,8 +13,11 @@ from app.utils.exceptions import (
 from app.utils.password import hash_password
 
 
+logger = logging.getLogger(__name__)
+
+
 class EmployeeService:
-    """Applique les règles métier relatives aux collaborateurs."""
+    """Applique les règles métier liées aux collaborateurs."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -27,8 +32,7 @@ class EmployeeService:
         password: str,
         role: Role,
     ) -> Employee:
-        """
-        Crée un collaborateur.
+        """Crée un collaborateur.
 
         Cette action est exclusivement réservée au service gestion.
         """
@@ -39,18 +43,32 @@ class EmployeeService:
         normalized_last_name = last_name.strip()
         normalized_email = email.strip().lower()
 
-        self._validate_required_fields(
-            first_name=normalized_first_name,
-            last_name=normalized_last_name,
-            email=normalized_email,
-            password=password,
-        )
+        if not normalized_first_name:
+            raise ValidationError(
+                "Le prénom est obligatoire."
+            )
 
-        existing_employee = self.repository.get_by_email(
-            normalized_email
-        )
+        if not normalized_last_name:
+            raise ValidationError(
+                "Le nom est obligatoire."
+            )
 
-        if existing_employee is not None:
+        if not normalized_email:
+            raise ValidationError(
+                "L'email est obligatoire."
+            )
+
+        if not password:
+            raise ValidationError(
+                "Le mot de passe est obligatoire."
+            )
+
+        if (
+            self.repository.get_by_email(
+                normalized_email
+            )
+            is not None
+        ):
             raise DuplicateError(
                 "Un collaborateur utilise déjà cette adresse email."
             )
@@ -64,13 +82,31 @@ class EmployeeService:
         )
 
         try:
-            created_employee = self.repository.create(employee)
+            created_employee = self.repository.create(
+                employee
+            )
+
             self.session.commit()
+
+            logger.info(
+                "Collaborateur créé : employee_id=%s, "
+                "role=%s, created_by_employee_id=%s.",
+                created_employee.id,
+                created_employee.role.value,
+                current_employee.id,
+            )
 
             return created_employee
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de la création "
+                "d'un collaborateur par employee_id=%s.",
+                current_employee.id,
+            )
+
             raise
 
     def get_employee(
@@ -78,25 +114,19 @@ class EmployeeService:
         current_employee: Employee,
         employee_id: int,
     ) -> Employee:
-        """
-        Retourne un collaborateur.
-
-        Cette action est exclusivement réservée au service gestion.
-        """
+        """Retourne un collaborateur."""
 
         self._require_management_role(current_employee)
 
-        return self._get_existing_employee(employee_id)
+        return self._get_existing_employee(
+            employee_id
+        )
 
     def list_employees(
         self,
         current_employee: Employee,
     ) -> list[Employee]:
-        """
-        Retourne la liste des collaborateurs.
-
-        Cette action est exclusivement réservée au service gestion.
-        """
+        """Retourne la liste des collaborateurs."""
 
         self._require_management_role(current_employee)
 
@@ -111,15 +141,13 @@ class EmployeeService:
         email: str | None = None,
         role: Role | None = None,
     ) -> Employee:
-        """
-        Modifie un collaborateur.
-
-        Cette action est exclusivement réservée au service gestion.
-        """
+        """Modifie un collaborateur."""
 
         self._require_management_role(current_employee)
 
-        employee = self._get_existing_employee(employee_id)
+        employee = self._get_existing_employee(
+            employee_id
+        )
 
         if first_name is not None:
             normalized_first_name = first_name.strip()
@@ -149,8 +177,10 @@ class EmployeeService:
                     "L'email ne peut pas être vide."
                 )
 
-            existing_employee = self.repository.get_by_email(
-                normalized_email
+            existing_employee = (
+                self.repository.get_by_email(
+                    normalized_email
+                )
             )
 
             if (
@@ -158,7 +188,8 @@ class EmployeeService:
                 and existing_employee.id != employee.id
             ):
                 raise DuplicateError(
-                    "Un collaborateur utilise déjà cette adresse email."
+                    "Un collaborateur utilise déjà "
+                    "cette adresse email."
                 )
 
             employee.email = normalized_email
@@ -167,13 +198,32 @@ class EmployeeService:
             employee.role = role
 
         try:
-            updated_employee = self.repository.update(employee)
+            updated_employee = self.repository.update(
+                employee
+            )
+
             self.session.commit()
+
+            logger.info(
+                "Collaborateur modifié : employee_id=%s, "
+                "updated_by_employee_id=%s, role=%s.",
+                updated_employee.id,
+                current_employee.id,
+                updated_employee.role.value,
+            )
 
             return updated_employee
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de la modification "
+                "de employee_id=%s par employee_id=%s.",
+                employee_id,
+                current_employee.id,
+            )
+
             raise
 
     def delete_employee(
@@ -181,72 +231,71 @@ class EmployeeService:
         current_employee: Employee,
         employee_id: int,
     ) -> None:
-        """
-        Supprime un collaborateur.
-
-        Cette action est exclusivement réservée au service gestion.
-        Un gestionnaire ne peut pas supprimer son propre compte.
-        """
+        """Supprime un collaborateur."""
 
         self._require_management_role(current_employee)
 
-        employee = self._get_existing_employee(employee_id)
+        employee = self._get_existing_employee(
+            employee_id
+        )
 
         if employee.id == current_employee.id:
             raise ValidationError(
-                "Vous ne pouvez pas supprimer votre propre compte."
+                "Vous ne pouvez pas supprimer "
+                "votre propre compte."
             )
+
+        deleted_employee_id = employee.id
+        deleted_employee_role = employee.role.value
 
         try:
             self.repository.delete(employee)
+
             self.session.commit()
+
+            logger.info(
+                "Collaborateur supprimé : employee_id=%s, "
+                "role=%s, deleted_by_employee_id=%s.",
+                deleted_employee_id,
+                deleted_employee_role,
+                current_employee.id,
+            )
 
         except Exception:
             self.session.rollback()
+
+            logger.exception(
+                "Erreur technique lors de la suppression "
+                "de employee_id=%s par employee_id=%s.",
+                employee_id,
+                current_employee.id,
+            )
+
             raise
 
     def _get_existing_employee(
         self,
         employee_id: int,
     ) -> Employee:
-        employee = self.repository.get_by_id(employee_id)
+        """Retourne un collaborateur existant."""
+
+        employee = self.repository.get_by_id(
+            employee_id
+        )
 
         if employee is None:
-            raise NotFoundError("Collaborateur introuvable.")
+            raise NotFoundError(
+                "Collaborateur introuvable."
+            )
 
         return employee
-
-    @staticmethod
-    def _validate_required_fields(
-        first_name: str,
-        last_name: str,
-        email: str,
-        password: str,
-    ) -> None:
-        if not first_name:
-            raise ValidationError(
-                "Le prénom est obligatoire."
-            )
-
-        if not last_name:
-            raise ValidationError(
-                "Le nom est obligatoire."
-            )
-
-        if not email:
-            raise ValidationError(
-                "L'email est obligatoire."
-            )
-
-        if not password:
-            raise ValidationError(
-                "Le mot de passe est obligatoire."
-            )
 
     @staticmethod
     def _require_management_role(
         employee: Employee,
     ) -> None:
+        """Vérifie que le collaborateur appartient à la gestion."""
+
         if employee.role != Role.GESTION:
             raise AuthorizationError(
                 "Cette action est réservée au service gestion."
