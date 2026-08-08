@@ -197,8 +197,8 @@ PostgreSQL
 ### 1. Cloner le dépôt
 
 ```bash
-git clone <URL_DU_DEPOT>
-cd OC_P12_EpicEvents
+git clone https://github.com/mouquettom/Epic-Events-PostgresSQL.git
+cd Epic-Events-PostgresSQL
 ```
 
 ### 2. Créer l’environnement virtuel
@@ -293,6 +293,7 @@ TO epic_user;
 Se connecter ensuite à la base et attribuer les droits nécessaires sur le schéma :
 
 ```sql
+\c epic_events
 GRANT USAGE, CREATE
 ON SCHEMA public
 TO epic_user;
