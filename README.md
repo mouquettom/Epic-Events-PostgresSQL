@@ -1,114 +1,114 @@
 # Epic Events CRM
 
-Application CRM en ligne de commande développée en Python pour gérer les employés, les clients, les contrats et les événements de l’entreprise fictive **Epic Events**.
+Command-line CRM application developed in Python to manage employees, clients, contracts, and events for the fictional company **Epic Events**.
 
-Le projet repose sur une architecture en couches afin de séparer clairement l’interface utilisateur, les règles métier et l’accès aux données.
-
----
-
-## Fonctionnalités
-
-### Authentification
-
-- Connexion par email et mot de passe
-- Mots de passe hachés avec bcrypt
-- Génération de jetons JWT
-- Gestion de la session utilisateur
-- Expiration des jetons d’accès
-- Déconnexion sécurisée
-
-### Gestion des employés
-
-Fonctionnalités réservées au service gestion :
-
-- Lister les employés
-- Consulter un employé
-- Créer un employé
-- Modifier un employé
-- Supprimer un employé
-- Empêcher la suppression de son propre compte
-- Attribution des rôles `GESTION`, `COMMERCIAL` et `SUPPORT`
-
-### Gestion des clients
-
-- Création d’un client par un commercial
-- Consultation et modification selon les permissions
-- Détection des emails en doublon
-- Association automatique du client au commercial connecté
-- Suppression d’un client selon les règles métier
-
-### Gestion des contrats
-
-- Création d’un contrat pour un client
-- Gestion du montant total et du montant restant
-- Signature d’un contrat
-- Consultation des contrats
-- Liste des contrats non signés
-- Liste des contrats non soldés
-- Modification selon le rôle et la propriété du contrat
-- Suppression réservée au service gestion
-
-### Gestion des événements
-
-- Création d’un événement à partir d’un contrat signé
-- Gestion des dates, du lieu, du nombre de participants et des notes
-- Consultation des événements selon le rôle
-- Affectation d’un employé du support
-- Retrait d’un employé du support
-- Liste des événements sans support
-- Modification par le service gestion ou le support affecté
-- Suppression réservée au service gestion
-
-### Supervision
-
-- Remontée des erreurs techniques avec Sentry
-- Distinction entre erreurs métier et erreurs inattendues
-- Environnement Sentry configurable
-- Aucune donnée personnelle envoyée par défaut
+The project uses a layered architecture to clearly separate the user interface, business rules, and data access.
 
 ---
 
-## Rôles et permissions
+## Features
+
+### Authentication
+
+- Login with email and password
+- Password hashing with bcrypt
+- JWT token generation
+- User session management
+- Access token expiration
+- Secure logout
+
+### Employee Management
+
+Features restricted to the management department:
+
+- List employees
+- View an employee
+- Create an employee
+- Update an employee
+- Delete an employee
+- Prevent users from deleting their own account
+- Assign `GESTION`, `COMMERCIAL`, and `SUPPORT` roles
+
+### Client Management
+
+- Client creation by a sales employee
+- Viewing and updating clients according to permissions
+- Duplicate email detection
+- Automatic assignment of the client to the logged-in sales employee
+- Client deletion according to business rules
+
+### Contract Management
+
+- Create a contract for a client
+- Manage total and remaining amounts
+- Sign a contract
+- View contracts
+- List unsigned contracts
+- List contracts with outstanding balances
+- Update contracts according to role and ownership
+- Contract deletion restricted to the management department
+
+### Event Management
+
+- Create an event from a signed contract
+- Manage dates, location, number of attendees, and notes
+- View events according to role
+- Assign a support employee
+- Remove a support employee
+- List events without assigned support
+- Update events by the management department or assigned support employee
+- Event deletion restricted to the management department
+
+### Monitoring
+
+- Technical error reporting with Sentry
+- Distinction between business errors and unexpected errors
+- Configurable Sentry environment
+- No personal data sent by default
+
+---
+
+## Roles and Permissions
 
 ### GESTION
 
-Le service gestion peut notamment :
+The management department can, among other things:
 
-- gérer les employés ;
-- consulter tous les clients ;
-- consulter et modifier les contrats ;
-- consulter les contrats non signés et non soldés ;
-- consulter et modifier tous les événements ;
-- affecter ou retirer un membre du support ;
-- supprimer des contrats et des événements.
+- manage employees;
+- view all clients;
+- view and update contracts;
+- view unsigned contracts and contracts with outstanding balances;
+- view and update all events;
+- assign or remove a support employee;
+- delete contracts and events.
 
 ### COMMERCIAL
 
-Un commercial peut notamment :
+A sales employee can, among other things:
 
-- créer et gérer ses clients ;
-- créer des contrats pour ses propres clients ;
-- consulter et modifier ses propres contrats ;
-- consulter ses contrats non soldés ;
-- créer un événement pour un contrat signé lui appartenant ;
-- consulter les événements liés à ses contrats.
+- create and manage their clients;
+- create contracts for their own clients;
+- view and update their own contracts;
+- view their contracts with outstanding balances;
+- create an event for one of their signed contracts;
+- view events associated with their contracts.
 
 ### SUPPORT
 
-Un employé du support peut notamment :
+A support employee can, among other things:
 
-- consulter les clients ;
-- consulter les contrats ;
-- consulter les événements qui lui sont affectés ;
-- modifier les événements qui lui sont affectés.
+- view clients;
+- view contracts;
+- view events assigned to them;
+- update events assigned to them.
 
-Les autorisations sont vérifiées dans la couche `services`, indépendamment des menus affichés dans l’interface.
+Permissions are enforced in the `services` layer, independently of the menus displayed in the interface.
 
 ---
 
 ## Architecture
 
-```text
+```
 OC_P12_EpicEvents/
 │
 ├── app/
@@ -137,12 +137,13 @@ OC_P12_EpicEvents/
 ├── pytest.ini
 ├── requirements.txt
 └── README.md
+
 ```
 
-### Organisation des couches
+### Layer Organization
 
-```text
-Interface CLI
+```
+CLI Interface
     ↓
 Controllers
     ↓
@@ -153,18 +154,19 @@ Repositories
 SQLAlchemy
     ↓
 PostgreSQL
+
 ```
 
-- Les **controllers** gèrent les entrées et sorties de la console.
-- Les **services** appliquent les règles métier et les autorisations.
-- Les **repositories** effectuent les requêtes SQLAlchemy.
-- Les **models** décrivent les tables et leurs relations.
-- `CurrentSession` conserve l’employé et le jeton de la session active.
-- Les utilitaires gèrent les exceptions, les mots de passe, les JWT et Sentry.
+- **Controllers** handle console input and output.
+- **Services** enforce business rules and permissions.
+- **Repositories** perform SQLAlchemy queries.
+- **Models** define database tables and their relationships.
+- `CurrentSession` stores the employee and token for the active session.
+- Utilities handle exceptions, passwords, JWTs, and Sentry.
 
 ---
 
-## Technologies utilisées
+## Technologies Used
 
 - Python 3
 - PostgreSQL
@@ -182,60 +184,60 @@ PostgreSQL
 
 ---
 
-## Prérequis
+## Prerequisites
 
-- Python 3.11 ou version ultérieure
+- Python 3.11 or later
 - PostgreSQL
 - Git
-- Un environnement virtuel Python
-- Un projet Sentry facultatif pour la supervision des erreurs
+- A Python virtual environment
+- An optional Sentry project for error monitoring
 
 ---
 
 ## Installation
 
-### 1. Cloner le dépôt
+### 1. Clone the Repository
 
-```bash
+```
 git clone https://github.com/mouquettom/Epic-Events-PostgresSQL.git
 cd Epic-Events-PostgresSQL
 ```
 
-### 2. Créer l’environnement virtuel
+### 2. Create a Virtual Environment
 
-Sous macOS ou Linux :
+On macOS or Linux:
 
-```bash
+```
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Sous Windows :
+On Windows:
 
-```bash
+```
 python -m venv .venv
 .venv\Scripts\activate
 ```
 
-### 3. Installer les dépendances
+### 3. Install Dependencies
 
-```bash
+```
 pip install -r requirements.txt
 ```
 
 ---
 
-## Configuration de l’environnement
+## Environment Configuration
 
-Copier le fichier d’exemple :
+Copy the example file:
 
-```bash
+```
 cp .env.example .env
 ```
 
-Puis renseigner les variables dans `.env` :
+Then set the variables in `.env`:
 
-```env
+```
 DB_USER=epic_user
 DB_PASSWORD=your_database_password
 DB_HOST=localhost
@@ -248,58 +250,59 @@ SENTRY_DSN=
 SENTRY_ENVIRONMENT=development
 ```
 
-Le fichier `.env` contient des informations sensibles et ne doit jamais être versionné.
+The `.env` file contains sensitive information and must never be committed to version control.
 
-### Générer une clé JWT
+### Generate a JWT Secret Key
 
-```bash
+```
 python -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
-### Configurer Sentry
+### Configure Sentry
 
-Après avoir créé un projet Python sur Sentry, récupérer le DSN dans :
+After creating a Python project in Sentry, retrieve the DSN from:
 
-```text
+```
 Settings → Projects → Client Keys (DSN)
+
 ```
 
-Puis l’ajouter dans `.env` :
+Then add it to `.env`:
 
-```env
+```
 SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
 SENTRY_ENVIRONMENT=development
 ```
 
-L’application fonctionne également sans Sentry si `SENTRY_DSN` reste vide.
+The application also works without Sentry if `SENTRY_DSN` is left empty.
 
 ---
 
-## Configuration de PostgreSQL
+## PostgreSQL Configuration
 
-PostgreSQL doit être installé et le serveur doit être démarré avant de poursuivre.
+PostgreSQL must be installed and the server must be running before proceeding.
 
-### Se connecter à PostgreSQL
+### Connect to PostgreSQL
 
-Depuis un terminal, se connecter avec un utilisateur PostgreSQL disposant des droits nécessaires pour créer une base et un utilisateur.
+From a terminal, connect using a PostgreSQL user with sufficient privileges to create a database and a user.
 
-Par exemple :
+For example:
 
-```bash
+```
 psql -d postgres
 ```
 
-Selon la configuration locale, il peut être nécessaire de préciser l'utilisateur :
+Depending on your local configuration, you may need to specify the user:
 
-```bash
+```
 psql -U postgres -d postgres
 ```
 
-### Créer la base de données et l'utilisateur
+### Create the Database and User
 
-Dans l'invite PostgreSQL :
+From the PostgreSQL prompt:
 
-```sql
+```
 CREATE DATABASE epic_events;
 
 CREATE USER epic_user
@@ -310,144 +313,143 @@ ON DATABASE epic_events
 TO epic_user;
 ```
 
-Le mot de passe doit correspondre à la valeur de `DB_PASSWORD`
-définie dans le fichier `.env`.
+The password must match the `DB_PASSWORD` value defined in the `.env` file.
 
-### Attribuer les droits sur le schéma
+### Grant Schema Permissions
 
-Se connecter à la base nouvellement créée :
+Connect to the newly created database:
 
-```sql
+```
 \c epic_events
 ```
 
-Puis autoriser `epic_user` à utiliser et créer des objets dans le
-schéma `public` :
+Then allow `epic_user` to use and create objects in the `public` schema:
 
-```sql
+```
 GRANT USAGE, CREATE
 ON SCHEMA public
 TO epic_user;
 ```
 
-Quitter PostgreSQL :
+Exit PostgreSQL:
 
-```text
+```
 \q
+
 ```
 
-La base est maintenant prête à recevoir les migrations Alembic.
+The database is now ready for Alembic migrations.
 
 ---
 
-## Migrations Alembic
+## Alembic Migrations
 
-Alembic constitue la méthode recommandée pour créer et mettre à jour le schéma.
+Alembic is the recommended method for creating and updating the database schema.
 
-Appliquer toutes les migrations :
+Apply all migrations:
 
-```bash
+```
 alembic upgrade head
 ```
 
-Afficher la migration active :
+Display the current migration:
 
-```bash
+```
 alembic current
 ```
 
-Afficher l’historique :
+Display the migration history:
 
-```bash
+```
 alembic history
 ```
 
-Créer une nouvelle migration après modification des modèles :
+Create a new migration after modifying the models:
 
-```bash
-alembic revision --autogenerate -m "Description de la migration"
+```
+alembic revision --autogenerate -m "Migration description"
 ```
 
-Puis l’appliquer :
+Then apply it:
 
-```bash
+```
 alembic upgrade head
 ```
 
-Le script `app/database/init_db.py` peut être utilisé dans certains contextes de développement, mais Alembic doit rester la source de vérité pour le schéma du projet.
+The `app/database/init_db.py` script may be used in some development contexts, but Alembic should remain the source of truth for the project schema.
 
 ---
 
-## Création du premier compte gestion
+## Creating the First Management Account
 
-Une fois la base et les tables prêtes :
+Once the database and tables are ready:
 
-```bash
+```
 python -m app.database.create_admin
 ```
 
-Le compte créé reçoit automatiquement le rôle `GESTION`.
+The created account is automatically assigned the `GESTION` role.
 
 ---
 
-## Lancement de l’application
+## Running the Application
 
-```bash
+```
 python main.py
 ```
 
-Après connexion, le menu affiché dépend du rôle de l’employé.
+After login, the displayed menu depends on the employee's role.
 
 ---
 
-## Sécurité
+## Security
 
-### Mots de passe
+### Passwords
 
-Les mots de passe sont hachés avec bcrypt et ne sont jamais stockés en clair.
+Passwords are hashed with bcrypt and are never stored in plain text.
 
-La politique actuelle exige au moins huit caractères.
+The current password policy requires at least eight characters.
 
 ### JWT
 
-Les jetons JWT :
+JWT tokens:
 
-- sont signés avec `HS256` ;
-- contiennent l’identifiant de l’employé ;
-- expirent après soixante minutes ;
-- utilisent une clé secrète provenant du fichier `.env`.
+- are signed using `HS256`;
+- contain the employee ID;
+- expire after sixty minutes;
+- use a secret key loaded from the `.env` file.
 
-### Variables sensibles
+### Sensitive Variables
 
-Les éléments suivants ne doivent jamais être ajoutés au dépôt Git :
+The following items must never be committed to the Git repository:
 
 - `.env`
-- mots de passe PostgreSQL
-- clé JWT
-- jetons JWT
-- secrets d’intégration
-- informations personnelles réelles
+- PostgreSQL passwords
+- JWT secret key
+- JWT tokens
+- integration secrets
+- real personal information
 
 ---
 
 ## Sentry
 
-Sentry est initialisé au démarrage lorsque `SENTRY_DSN` est défini.
+Sentry is initialized at application startup when `SENTRY_DSN` is defined.
 
-Les exceptions métier telles que :
+Business exceptions such as:
 
 - `ValidationError`
 - `AuthorizationError`
 - `DuplicateError`
 - `NotFoundError`
 
-sont affichées à l’utilisateur sans être considérées comme des erreurs techniques.
+are displayed to the user without being treated as technical errors.
 
-Les exceptions inattendues sont envoyées à Sentry depuis `main.py`.
+Unexpected exceptions are sent to Sentry from `main.py`.
 
-La configuration désactive l’envoi automatique de données personnelles :
+The configuration disables the automatic transmission of personal data:
 
-```python
+```
 send_default_pii=False
 ```
 
@@ -455,120 +457,118 @@ send_default_pii=False
 
 ## Tests
 
-Les tests sont divisés en trois catégories.
+Tests are divided into three categories.
 
-### Tests unitaires
+### Unit Tests
 
-```bash
+```
 pytest tests/unit -v
 ```
 
-### Tests d’intégration
+### Integration Tests
 
-```bash
+```
 pytest tests/integration -v
 ```
 
-### Tests fonctionnels
+### Functional Tests
 
-```bash
+```
 pytest tests/functional -v
 ```
 
-### Exécuter toute la suite
+### Run the Full Test Suite
 
-```bash
+```
 pytest
 ```
 
-Lors de la dernière validation du projet :
+At the time of the project's latest validation:
 
-```text
-481 tests réussis
-95 % de couverture globale
+```
+481 tests passed
+95% overall coverage
+
 ```
 
-Ces valeurs peuvent évoluer avec les prochaines modifications du code.
+These values may change as the codebase evolves.
 
-### Couverture
+### Coverage
 
-```bash
+```
 pytest --cov=app --cov-report=term-missing
 ```
 
-Générer un rapport HTML :
+Generate an HTML report:
 
-```bash
+```
 pytest --cov=app --cov-report=html
 ```
 
-Le rapport est ensuite disponible dans :
+The report is then available at:
 
-```text
+```
 htmlcov/index.html
+
 ```
 
 ---
 
-## Qualité du code
+## Code Quality
 
 ### Black
 
-Vérifier le formatage :
+Check formatting:
 
-```bash
+```
 black --check app tests main.py
 ```
 
-Appliquer le formatage :
+Apply formatting:
 
-```bash
+```
 black app tests main.py
 ```
 
 ### Flake8
 
-```bash
+```
 flake8 app tests main.py
 ```
 
 ---
 
-## Principales règles métier
+## Main Business Rules
 
-- Seul un employé de gestion peut administrer les employés.
-- Un employé ne peut pas supprimer son propre compte.
-- Seul un commercial peut créer un client.
-- Un commercial ne peut modifier que ses propres clients.
-- Seul un commercial peut créer un contrat.
-- Un contrat ne peut être créé que pour un client appartenant au commercial.
-- Le montant restant ne peut pas être négatif ni dépasser le montant total.
-- Un événement ne peut être créé que pour un contrat signé.
-- Seul le service gestion peut affecter un membre du support.
-- Un membre du support ne peut modifier que les événements qui lui sont affectés.
-- Les erreurs techniques inattendues sont transmises à Sentry.
-
----
-
-## Pistes d’amélioration
-
-- Adapter dynamiquement les sous-menus aux permissions de chaque rôle
-- Empêcher explicitement la suppression d’un client possédant des contrats
-- Filtrer la liste des clients d’un commercial selon sa propriété
-- Compléter la validation des champs lors de la modification d’un employé
-- Ajouter une commande de réinitialisation de mot de passe
-- Centraliser la configuration des variables d’environnement
-- Ajouter une interface web ou une API REST
-- Automatiser les contrôles avec une intégration continue
+- Only a management employee can manage employees.
+- An employee cannot delete their own account.
+- Only a sales employee can create a client.
+- A sales employee can only update their own clients.
+- Only a sales employee can create a contract.
+- A contract can only be created for a client assigned to that sales employee.
+- The remaining amount cannot be negative or exceed the total amount.
+- An event can only be created for a signed contract.
+- Only the management department can assign a support employee.
+- A support employee can only update events assigned to them.
+- Unexpected technical errors are reported to Sentry.
 
 ---
 
-## Auteur
+## Possible Improvements
 
-Projet réalisé dans le cadre du parcours de développement Python OpenClassrooms.
+- Dynamically adapt submenus to each role's permissions
+- Explicitly prevent deletion of a client who has contracts
+- Filter a sales employee's client list by ownership
+- Complete field validation when updating an employee
+- Add a password reset command
+- Centralize environment variable configuration
+- Add a web interface or REST API
+- Automate checks with continuous integration
 
 ---
 
-## Licence
+## Author
 
-Projet pédagogique. Ajouter une licence adaptée avant toute réutilisation ou publication publique.
+Project developed as part of the OpenClassrooms Python Developer learning path.
+
+---
