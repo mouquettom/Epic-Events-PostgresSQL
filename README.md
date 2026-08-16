@@ -569,6 +569,7 @@ flake8 app tests main.py
 
 ## Author
 
-Project developed as part of the OpenClassrooms Python Developer learning path.
+@tom_mouquet
 
----
+Project developed as part of the OpenClassrooms **Développeur
+d'application Python** training program.
