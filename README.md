@@ -199,8 +199,8 @@ PostgreSQL
 ### 1. Clone the Repository
 
 ```
-git clone https://github.com/mouquettom/Epic-Events-PostgresSQL.git
-cd Epic-Events-PostgresSQL
+git clone https://github.com/mouquettom/epic-events-crm.git
+cd epic-events-crm
 ```
 
 ### 2. Create a Virtual Environment
